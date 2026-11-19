@@ -175,4 +175,73 @@ return static function (MarcoPruebas $marco): void {
             MarcoPruebas::afirmarIgual($esperado, $roleMiddleware->tienePermiso($rol, $permiso), "tienePermiso({$rol}, {$permiso})");
         }
     });
+    $marco->probar('U07', 'Lista de bloqueo: rechaza contraseñas comunes y predecibles, acepta frases', static function () use ($datosRegistroValidos): void {
+        $contrasenasDebiles = [
+            '123456789012345', '987654321098765', 'abcdefghijklmnopq', 'aaaaaaaaaaaaaaa',
+            '121212121212121', 'passwordpassword', 'Contraseña Segura 123', 'contrasenasegura123',
+            'Universidad del Mar 2026', 'UMAR Puerto Escondido', 'holaholaholahola', 'qwertyuiopasdfghjkl',
+            '!!!!!!!!!!!!!!!!', str_repeat('xk7 ', 32),
+        ];
+        foreach ($contrasenasDebiles as $contrasenaDebil) {
+            MarcoPruebas::afirmar(ListaBloqueoContrasenas::esContrasenaDebil($contrasenaDebil), "Debe rechazarse: {$contrasenaDebil}");
+            $validacion = ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, [
+                'contrasena' => $contrasenaDebil, 'confirmacion_contrasena' => $contrasenaDebil,
+            ]));
+            MarcoPruebas::afirmar(!$validacion['valido'] && isset($validacion['errores']['contrasena']), "Registro rechazado: {$contrasenaDebil}");
+        }
+        $contrasenasValidas = [
+            'una frase de paso bastante larga', 'mi password favorito es el mar azul',
+            'El café de Puerto Escondido sabe mejor',
+        ];
+        foreach ($contrasenasValidas as $contrasenaValida) {
+            MarcoPruebas::afirmar(!ListaBloqueoContrasenas::esContrasenaDebil($contrasenaValida), "Debe aceptarse: {$contrasenaValida}");
+        }
+        MarcoPruebas::afirmarIgual('contrasenasegura123', ListaBloqueoContrasenas::normalizar('Contraseña Segura-123'), 'Normalización solo para comparar');
+    });
+
+    $marco->probar('U08', 'Login: indica qué campo falta y conserva el correo escrito', static function (): void {
+        $soloContrasena = ValidadorEntrada::validarDatosLogin(['correo_electronico' => '  ', 'contrasena' => 'algo']);
+        MarcoPruebas::afirmar(!$soloContrasena['valido'], 'Correo vacío es inválido');
+        MarcoPruebas::afirmarIgual(['correo_electronico'], array_keys($soloContrasena['errores']), 'Solo se pide el correo');
+
+        $soloCorreo = ValidadorEntrada::validarDatosLogin(['correo_electronico' => 'ana@ejemplo.mx', 'contrasena' => '']);
+        MarcoPruebas::afirmarIgual(['contrasena'], array_keys($soloCorreo['errores']), 'Solo se pide la contraseña');
+        MarcoPruebas::afirmarIgual('ana@ejemplo.mx', $soloCorreo['correoPrevio'], 'El correo escrito se conserva');
+
+        $vacio = ValidadorEntrada::validarDatosLogin([]);
+        MarcoPruebas::afirmarIgual(['correo_electronico', 'contrasena'], array_keys($vacio['errores']), 'Ambos campos vacíos');
+
+        $completo = ValidadorEntrada::validarDatosLogin(['correo_electronico' => ' Ana@Ejemplo.MX ', 'contrasena' => ' clave ']);
+        MarcoPruebas::afirmar($completo['valido'], 'Datos completos');
+        MarcoPruebas::afirmarIgual(' clave ', $completo['datos']['contrasena'], 'La contraseña no se recorta');
+    });
+
+    $marco->probar('U09', 'Inactividad configurable en .env solo entre 60 s y 30 min', static function (): void {
+        $casos = ['' => 1800, '120' => 120, '60' => 60, '59' => 1800, '3600' => 1800, '0' => 1800, 'abc' => 1800, '1800' => 1800];
+        foreach ($casos as $valor => $esperado) {
+            Configuracion::definirValores(['SESION_INACTIVIDAD_SEGUNDOS' => (string) $valor]);
+            MarcoPruebas::afirmarIgual($esperado, GestorSesion::obtenerTiempoInactividadSegundos(), "SESION_INACTIVIDAD_SEGUNDOS={$valor}");
+        }
+        Configuracion::definirValores(['SESION_INACTIVIDAD_SEGUNDOS' => '']);
+    });
+    $marco->probar('U10', 'Laboratorio E8: la consulta concatenada se altera y la preparada no', static function (): void {
+        require_once RUTA_RAIZ . '/laboratorio/inyeccion-sql/LaboratorioInyeccionSql.php';
+        if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
+            MarcoPruebas::afirmar(true, 'Sin pdo_sqlite: se demuestra con --mariadb');
+            return;
+        }
+        $laboratorio = new LaboratorioInyeccionSql(new PDO('sqlite::memory:'));
+        $laboratorio->prepararDatosFicticios();
+        $resultados = [];
+        foreach ($laboratorio->ejecutarComparacion() as $resultado) {
+            $resultados[$resultado['caso']['clave']] = $resultado;
+        }
+        MarcoPruebas::afirmar($resultados['E8-P01']['vulnerable']['acceso'] && $resultados['E8-P01']['segura']['acceso'], 'Credenciales normales funcionan en ambas');
+        MarcoPruebas::afirmar($resultados['E8-P02']['vulnerable']['error'] !== null, 'La comilla rompe la consulta vulnerable');
+        MarcoPruebas::afirmar($resultados['E8-P02']['segura']['acceso'], 'La preparada trata la comilla como dato');
+        MarcoPruebas::afirmarIgual(3, $resultados['E8-P03']['vulnerable']['filas'], "' OR '1'='1 devuelve todas las filas en la vulnerable");
+        MarcoPruebas::afirmarIgual(0, $resultados['E8-P03']['segura']['filas'], 'La preparada no devuelve filas');
+        MarcoPruebas::afirmar($resultados['E8-P03b']['vulnerable']['acceso'], 'UNION concede acceso en la vulnerable');
+        MarcoPruebas::afirmar(!$resultados['E8-P03b']['segura']['acceso'], 'UNION no concede acceso en la preparada');
+    });
 };

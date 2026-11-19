@@ -1,0 +1,98 @@
+# PAPC | Lista de bloqueo de contraseñas (NIST SP 800-63B-4, sección 3.1.1.2).
+# Una contraseña por línea. Se comparan COMPLETAS, sin distinguir mayúsculas
+# y sin espacios ni signos (ver ListaBloqueoContrasenas::normalizar()).
+# Solo hace falta incluir las de 15 caracteres o más: las cortas ya se
+# rechazan por longitud. Las secuencias (123456789012345, abcdefghijklmno) y
+# las repeticiones (aaaaaaaaaaaaaaa, abcabcabcabcabc) se detectan por patrón.
+#
+# Fuentes: listas públicas de contraseñas más filtradas (SecLists /
+# rockyou / NordPass) filtradas a 15+ caracteres, y términos propios del
+# servicio (NIST pide incluir palabras específicas del contexto).
+
+# --- Más frecuentes en filtraciones (15+ caracteres) ---
+123456789123456789
+123456789987654321
+1234567890123456
+12345678901234567890
+1q2w3e4r5t6y7u8i9o0p
+1qaz2wsx3edc4rfv
+qwertyuiopasdfghjkl
+qwertyuiopasdfghjklzxcvbnm
+qwertyuiop123456
+qwerty123456789
+qwertyqwertyqwerty
+asdfghjklasdfghjkl
+zxcvbnmzxcvbnm
+iloveyouiloveyou
+iloveyoubaby123
+iloveyouforever
+iloveyousomuch
+passwordpassword
+password123456789
+password1234567
+mypassword12345
+thisismypassword
+contraseña123456
+contraseña1234567
+micontraseña12345
+contraseñasegura
+contraseñasegura123
+contraseñamuysegura
+estaesmicontraseña
+nosemicontraseña
+teamomuchoteamo
+teamoconlocura
+teamoparasiempre
+holamundo12345678
+holaholaholahola
+administrador123
+administrador12345
+administrator123
+superadministrador
+welcome123456789
+letmeinletmein
+trustno1trustno1
+abc123abc123abc123
+football12345678
+baseball12345678
+superman12345678
+pokemonpokemon123
+dragonballz12345
+starwars12345678
+princesa12345678
+mariposa12345678
+qazwsxedcrfvtgb
+q1w2e3r4t5y6u7i8
+p4ssw0rd12345678
+passw0rdpassw0rd
+00000000000000000
+11111111111111111
+correoelectronico
+mi correo electronico
+
+# --- Términos del servicio y de la institución ---
+universidaddelmar
+universidaddelmar123
+universidaddelmar2026
+umarpuertoescondido
+umarpuertoescondido2026
+puertoescondido123
+puertoescondidooaxaca
+puertoescondido2026
+umaroaxaca12345
+umar123456789012
+campuspuertoescondido
+portaldeavisos
+portaldeavisos123
+portaldeavisosypublicaciones
+portaldeavisosypublicacionesdelacomunidad
+papc123456789012
+papcpapcpapcpapc
+avisosypublicaciones
+ingenieriaeninformatica
+licenciaturaeninformatica
+ciberseguridad2026
+ciberseguridad12345
+seguridadinformatica
+seguridadinformatica123
+marenostrumveritabilefaciendum

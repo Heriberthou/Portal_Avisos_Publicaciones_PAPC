@@ -5,7 +5,7 @@ registro, inicio/cierre de sesión, gestión de sesiones, RBAC y auditoría. Los
 comentarios, favoritos y propuestas **no** están implementados; únicamente se dejaron preparados los
 permisos (`config/permisos.php`) y el mecanismo (`RoleMiddleware::verificarPermiso()`) que usarán.
 
-Stack: PHP 8.2+ · MariaDB 10.4+ · Apache (XAMPP) · HTML sin JavaScript · sin frameworks ni Composer.
+Stack: PHP 8.2+ · MariaDB 10.4+ · Apache (XAMPP) · HTML/CSS · JavaScript propio solo para ayudas de validación · sin frameworks ni Composer.
 
 ---
 
@@ -85,6 +85,7 @@ papc/
 │   ├── schema.sql                       [Fase I]  Esquema 1.2 original
 │   ├── usuario-aplicacion.sql           [nuevo]   Cuenta MariaDB de mínimos privilegios
 │   └── migraciones/                     [nuevo]   001, 002 y 003 con su reversión
+├── config/contrasenas-comunes.txt       [Fase II] Lista de bloqueo de contraseñas (no pública)
 ├── herramientas/
 │   └── inicializar-administrador-principal.php  [nuevo] Solo consola
 ├── storage/
@@ -93,7 +94,11 @@ papc/
 ├── public/
 │   ├── index.php                        [Fase I]  Único PHP público; solo delega en Aplicacion
 │   ├── .htaccess                        Reescritura a index.php, sin listados
-│   └── css/portal.css
+│   ├── css/portal.css                   Diseño institucional UMAR
+│   ├── img/                             Escudo de la UMAR y patrón de olas
+│   └── js/validacion-formularios.js     [Fase II] Validación en el navegador (solo ayuda; PHP valida de nuevo)
+├── laboratorio/
+│   └── inyeccion-sql/                   [Fase II] E8-P07: consulta vulnerable vs. preparada (solo consola)
 ├── tests/                               [Fase I]  Marco propio + 3 suites
 ├── docs/
 │   ├── evidencia-pruebas.txt            Salida real de la última ejecución
@@ -534,6 +539,46 @@ En una copia desechable se introdujo un defecto a la vez:
 
 ---
 
+## Fase II · Ajustes para la evaluación cruzada E6–E10
+
+Cambios hechos a partir del *Instrumento de Evaluación Cruzada (Fase II, actividades 6–10)*.
+**Regla de diseño:** el navegador solo ayuda; el servidor decide. Ningún permiso se revisa en el cliente
+y la contraseña no se transforma ni se cifra en el navegador (viaja en el POST; la protección del canal es HTTPS).
+
+| Actividad | Cambio | Dónde | Prueba |
+|---|---|---|---|
+| E6-P04/P05/P06 | El login indica qué campo falta ("Escribe tu correo electrónico." / "Escribe tu contraseña.") y conserva el correo escrito; 422 sin consultar la BD | `ValidadorEntrada::validarDatosLogin()`, `AuthController`, `login.php` | U08 |
+| E8-P07 | Laboratorio de consola con la consulta vulnerable y la preparada, mismas entradas maliciosas | `laboratorio/inyeccion-sql/` (ver su README) | U10 |
+| E9 (cliente) | `validacion-formularios.js`: mensajes por campo con los mismos textos del servidor, `aria-invalid`/`aria-describedby`, contador "N de 15 caracteres mínimos", aviso "Las contraseñas coinciden / no coinciden", botón Mostrar/Ocultar | `public/js/`, `login.php`, `registro.php`, `portal.css` | Prueba en navegador |
+| E9-P04/P05 | Sin JavaScript, el formulario conserva `required`/`minlength`/`maxlength` del HTML; si se eliminan, PHP vuelve a rechazar (P04, P10b) | `ValidadorEntrada` | P04, P10b |
+| E9 (semántica) | Lista de bloqueo: contraseñas comunes, términos de la UMAR y del portal, secuencias (`123456789012345`), repeticiones y menos de 4 caracteres distintos. Compara la contraseña **completa** normalizada (no fragmentos) | `ListaBloqueoContrasenas`, `config/contrasenas-comunes.txt` | U07 |
+| E10-P07 | Inactividad configurable para la demostración: `SESION_INACTIVIDAD_SEGUNDOS` en `.env` (60–1800 s; fuera de rango se ignora). La página de inicio muestra la política vigente | `GestorSesion::obtenerTiempoInactividadSegundos()` | U09 |
+
+### Política de caracteres (E9-P06)
+| Campo | Regla (cliente y servidor) |
+|---|---|
+| Nombre(s) | Obligatorio, 2–60 caracteres; letras (con acentos), espacios, punto, apóstrofo y guion |
+| Apellido paterno / materno | Paterno obligatorio, materno opcional; 2–50 caracteres; mismas letras permitidas |
+| Correo | Obligatorio, máximo 150, formato `FILTER_VALIDATE_EMAIL` (cliente: `type=email`) |
+| Tipo de integrante | Obligatorio: `ALUMNO` o `PROFESOR` (lista blanca) |
+| Contraseña | 15–128 caracteres, cualquier carácter (incluidos espacios); no estar en la lista de bloqueo (solo servidor) |
+| Confirmación | Idéntica a la contraseña (`hash_equals`) |
+| Campos extra | Cualquier campo fuera de la lista blanca → 400 y auditoría |
+
+### Política de sesión y cookies (E10-P04/P07)
+- Inactividad: 30 min (demostración: `SESION_INACTIVIDAD_SEGUNDOS=120`). Duración máxima: 8 h. Regeneración de ID al autenticar y cada 15 min.
+- Cookie: `HttpOnly`, `SameSite=Lax`, solo cookies (sin ID en la URL), ruta limitada a `APP_RUTA_BASE`.
+  `Secure` y prefijo `__Host-` **solo con HTTPS**: el servidor del laboratorio usa HTTP, así que ahí no se aplican
+  (limitación documentada; ver Limitaciones 12).
+- Cerrar sesión destruye la sesión en el servidor; la cookie anterior deja de servir. Las páginas protegidas
+  se envían con `Cache-Control: no-store` (botón Atrás, E10-P08).
+
+### Para la demostración
+1. En el `.env` del servidor: `SESION_INACTIVIDAD_SEGUNDOS=120`. Al terminar, déjalo vacío (30 min).
+2. E8: `php laboratorio\inyeccion-sql\demostracion.php` desde la Shell de XAMPP (si no está `pdo_sqlite`, agregar `--mariadb`).
+
+---
+
 ## Etapa 7. Verificación final
 
 ### Reglas NOM-01 a NOM-15 (ejemplos reales del código)
@@ -559,7 +604,7 @@ fuera de camelCase, ninguna clase CSS fuera de kebab-case.
 | NOM-15 CSS kebab-case | `tarjeta-formulario`, `boton-principal`, `mensaje-error` | `public/css/portal.css` |
 
 Restricción `CHECK` (migración 003): NOM-01 a NOM-15 no definen un prefijo para `CHECK`; se propone\n`chk_<tabla>_<campo>` siguiendo el patrón de NOM-06/NOM-07 (`chk_usuario_nombre_usuario`).\n\nNota: los nombres de campos HTML (`correo_electronico`, `token_csrf`) usan snake_case para coincidir con las
-columnas; NOM-12 aplica a variables PHP/JS, que sí cumplen. No hay JavaScript en el módulo.
+columnas; NOM-12 aplica a variables PHP/JS, que sí cumplen (`validacion-formularios.js` usa camelCase: `obtenerError()`, `actualizarContador()`).
 
 ### Cumplimiento de la matriz RBAC
 | Permiso | Invitado | Usuario | Admin | Principal | Prueba |
@@ -580,7 +625,7 @@ en esos módulos.
 | A05 Inyección (SQL) | PDO con `ATTR_EMULATE_PREPARES=false`, parámetros vinculados, `sql_mode` estricto | `config/database.php`, modelos |
 | A04 Fallas criptográficas (Password Storage) | Argon2id (64 MiB, t=4, p=1), `password_needs_rehash`, respaldo bcrypt sin truncar | `GestorContrasenas.php` |
 | A07 Fallas de autenticación | Mínimo 15 caracteres sin reglas de composición, máx. 128; mensaje genérico; tiempo igualado; límite por cuenta y origen sin bloqueo permanente | `ValidadorEntrada`, `ServicioAutenticacion`, `LimitadorIntentos` |
-| A07 · Session Management | Modo estricto, solo cookies, sin SID en URL, regeneración al autenticar y cada 15 min, inactividad 30 min, máximo 8 h, destrucción en servidor al salir, invalidación por versión | `GestorSesion.php` |
+| A07 · Session Management | Modo estricto, solo cookies, sin SID en URL, regeneración al autenticar y cada 15 min, inactividad 30 min (configurable a la baja con `SESION_INACTIVIDAD_SEGUNDOS`), máximo 8 h, destrucción en servidor al salir, invalidación por versión | `GestorSesion.php` |
 | CSRF | Token de 256 bits por sesión, `hash_equals`, en todos los POST incluidos login, registro y logout | `ProtectorCsrf`, `Enrutador` |
 | A05 Inyección (XSS) | `htmlspecialchars(ENT_QUOTES\|ENT_SUBSTITUTE)` en toda salida; CSP sin scripts en línea | `Vista.php`, `Respuesta.php` |
 | A01 Control de acceso | Denegación por defecto, rol leído de BD en cada solicitud, listas blancas de campos, re-autenticación para cambios de rol, sin autoasignación | `RoleMiddleware`, servicios |
@@ -599,7 +644,7 @@ implementados y probados en el alcance indicado.
 2. **Confirmación de correo** y **recuperación de contraseña**: no implementadas (requieren servidor de correo).
 3. **Cambio de contraseña por el usuario**: no hay pantalla; `UsuarioModel::actualizarHashContrasena(..., true)`
    ya invalida sesiones y está listo para usarse.
-4. **Lista de contraseñas comprometidas** (ASVS pide rechazar las más comunes): pendiente.
+4. **Lista de contraseñas comprometidas**: hay una lista local con patrones (secuencias, repeticiones), pero no se consulta un servicio de filtraciones en línea.
 5. **MFA**: no implementado; por eso la longitud mínima es 15.
 6. **Enumeración en el registro**: el mensaje de duplicado es genérico, pero un registro fallido sigue insinuando
    que el correo existe. La solución completa requiere correo de confirmación. El registro tampoco tiene límite de frecuencia.

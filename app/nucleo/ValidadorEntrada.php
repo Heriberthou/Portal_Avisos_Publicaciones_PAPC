@@ -95,7 +95,7 @@ final class ValidadorEntrada
             && self::obtenerTexto($datosRecibidos, 'apellido_materno_usuario') === null;
 
         $erroresNombre = array_filter([
-            'nombres_usuario'          => self::validarParteNombre($nombresUsuario, 'Los nombres', LONGITUD_MAXIMA_NOMBRES_USUARIO, true),
+            'nombres_usuario'          => self::validarParteNombre($nombresUsuario, 'El nombre', LONGITUD_MAXIMA_NOMBRES_USUARIO, true),
             'apellido_paterno_usuario' => self::validarParteNombre($apellidoPaterno, 'El apellido paterno', LONGITUD_MAXIMA_APELLIDO_USUARIO, true),
             'apellido_materno_usuario' => $maternoEnviadoInvalido
                 ? 'El apellido materno no es válido.'
@@ -120,7 +120,7 @@ final class ValidadorEntrada
         if ($errorContrasena !== null) {
             $errores['contrasena'] = $errorContrasena;
         } elseif ($confirmacionContrasena === null || !hash_equals($contrasena, $confirmacionContrasena)) {
-            $errores['confirmacion_contrasena'] = 'La confirmación no coincide con la contraseña.';
+            $errores['confirmacion_contrasena'] = 'Las contraseñas no coinciden.';
         }
 
         if ($tipoIntegrante === null || !in_array($tipoIntegrante, UsuarioModel::TIPOS_INTEGRANTE, true)) {
@@ -148,25 +148,36 @@ final class ValidadorEntrada
      * correo existe.
      *
      * @param array<mixed> $datosRecibidos Datos del formulario.
-     * @return array{valido: bool, datos: array<string, string>}
+     * @return array{valido: bool, datos: array<string, string>, errores: array<string, string>, correoPrevio: string}
      */
     public static function validarDatosLogin(array $datosRecibidos): array
     {
         $correoElectronico = self::obtenerTexto($datosRecibidos, 'correo_electronico');
         $contrasena = self::obtenerTexto($datosRecibidos, 'contrasena', false);
+        $errores = [];
 
-        $valido = $correoElectronico !== null
-            && $contrasena !== null
-            && $contrasena !== ''
-            && mb_strlen($correoElectronico) <= LONGITUD_MAXIMA_CORREO_ELECTRONICO
-            && mb_strlen($contrasena) <= LONGITUD_MAXIMA_CONTRASENA;
+        if ($correoElectronico === null || $correoElectronico === '') {
+            $errores['correo_electronico'] = 'Escribe tu correo electrónico.';
+        } elseif (mb_strlen($correoElectronico) > LONGITUD_MAXIMA_CORREO_ELECTRONICO) {
+            $errores['correo_electronico'] = sprintf('El correo no puede exceder %d caracteres.', LONGITUD_MAXIMA_CORREO_ELECTRONICO);
+        }
+        if ($contrasena === null || $contrasena === '') {
+            $errores['contrasena'] = 'Escribe tu contraseña.';
+        } elseif (mb_strlen($contrasena) > LONGITUD_MAXIMA_CONTRASENA) {
+            $errores['contrasena'] = sprintf('La contraseña no puede exceder %d caracteres.', LONGITUD_MAXIMA_CONTRASENA);
+        }
 
+        $valido = $errores === [];
         return [
-            'valido' => $valido,
-            'datos'  => $valido ? [
-                'correo_electronico' => self::normalizarCorreo($correoElectronico),
-                'contrasena'         => $contrasena,
+            'valido'  => $valido,
+            'datos'   => $valido ? [
+                'correo_electronico' => self::normalizarCorreo((string) $correoElectronico),
+                'contrasena'         => (string) $contrasena,
             ] : [],
+            'errores' => $errores,
+            // Solo para volver a mostrarlo en el formulario (nunca la contraseña).
+            'correoPrevio' => ($correoElectronico !== null && mb_strlen($correoElectronico) <= LONGITUD_MAXIMA_CORREO_ELECTRONICO)
+                ? $correoElectronico : '',
         ];
     }
 
@@ -246,8 +257,8 @@ final class ValidadorEntrada
     }
 
     /**
-     * Política de contraseñas: solo longitud (sin reglas de composición
-     * arbitrarias, como recomiendan NIST 800-63B y OWASP ASVS 5.0).
+     * Política de contraseñas: longitud y lista de bloqueo (sin reglas de
+     * composición arbitrarias, como recomiendan NIST 800-63B y OWASP ASVS 5.0).
      *
      * @param string|null $contrasena Contraseña recibida.
      * @return string|null Mensaje de error o null si es válida.
@@ -264,6 +275,9 @@ final class ValidadorEntrada
                 LONGITUD_MINIMA_CONTRASENA,
                 LONGITUD_MAXIMA_CONTRASENA
             );
+        }
+        if (ListaBloqueoContrasenas::esContrasenaDebil($contrasena)) {
+            return 'Esta contraseña es demasiado común o fácil de adivinar. Elige otra; puedes usar una frase larga.';
         }
         $limiteBytes = GestorContrasenas::obtenerLimiteBytes();
         if ($limiteBytes !== null && strlen($contrasena) > $limiteBytes) {

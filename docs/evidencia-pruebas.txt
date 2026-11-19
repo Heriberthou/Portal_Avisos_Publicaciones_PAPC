@@ -8,6 +8,10 @@
 [PASA] U03     Prevención de redirección abierta
 [PASA] U05     Publicación en subcarpeta /papc: rutas, enlaces y cookie limitada
 [PASA] U04     Matriz RBAC: denegación por defecto y separación de roles
+[PASA] U07     Lista de bloqueo: rechaza contraseñas comunes y predecibles, acepta frases
+[PASA] U08     Login: indica qué campo falta y conserva el correo escrito
+[PASA] U09     Inactividad configurable en .env solo entre 60 s y 30 min
+[PASA] U10     Laboratorio E8: la consulta concatenada se altera y la preparada no
 [PASA] P01     Registro correcto de un alumno
 [PASA] P02     Registro de profesor: PENDIENTE y sin permisos adicionales
 [PASA] P03     Rechazo de correos duplicados (incluso con mayúsculas)
@@ -44,4 +48,4 @@
 [PASA] P16     Archivos privados no accesibles por HTTP directo
 [PASA] P15b    Intentos repetidos por HTTP: 429 aun con la contraseña correcta
 
-Total: 45 | Pasan: 45 | Fallan: 0
+Total: 49 | Pasan: 49 | Fallan: 0

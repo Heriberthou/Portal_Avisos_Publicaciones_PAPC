@@ -3,7 +3,8 @@
  * Página mínima tras iniciar sesión (no es un dashboard): muestra los
  * datos de la cuenta leídos del servidor y el botón de cierre de sesión.
  *
- * Variables: usuarioActual (array), puedeAdministrar (bool).
+ * Variables: usuarioActual (array), puedeAdministrar (bool),
+ * minutosInactividad (int, política de expiración vigente).
  *
  * @var array<string, mixed> $datosVista
  */
@@ -27,6 +28,8 @@ $usuarioActual = $datosVista['usuarioActual'];
     <?php if ($datosVista['puedeAdministrar']): ?>
         <p><a href="<?= Vista::escapar(Vista::url('/admin/usuarios')) ?>">Administrar cuentas</a></p>
     <?php endif; ?>
+
+    <p class="texto-secundario">Por seguridad, tu sesión se cierra tras <?= (int) $datosVista['minutosInactividad'] ?> minuto(s) sin actividad.</p>
 
     <form method="post" action="<?= Vista::escapar(Vista::url('/cerrar-sesion')) ?>">
         <?= Vista::campoTokenCsrf() ?>

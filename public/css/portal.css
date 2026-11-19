@@ -142,6 +142,10 @@ body:has(.pantalla-acceso) .contenedor-principal > .mensaje {
     box-shadow: var(--sombra-suave);
     font: inherit;
 }
+.rejilla-campos input[aria-invalid="true"] {
+    border-color: var(--color-error);
+    background: #fff8f7;
+}
 .rejilla-campos input:focus {
     outline: none;
     border-color: var(--umar-azul);
@@ -162,6 +166,36 @@ body:has(.pantalla-acceso) .contenedor-principal > .mensaje {
 .grupo-opciones legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; }
 .grupo-opciones small { width: 100%; }
 .grupo-opciones input[type="radio"] { accent-color: var(--umar-azul); }
+.rejilla-campos .grupo-opciones.grupo-invalido { box-shadow: 0 0 0 1px var(--color-error); background: #fff8f7; }
+
+/* Contraseña con botón Mostrar/Ocultar (solo aparece si hay JavaScript). */
+.control-contrasena { position: relative; }
+.rejilla-campos .control-contrasena input { padding-right: 92px; }
+.boton-mostrar {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 5px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--umar-azul);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+}
+.boton-mostrar:hover { background: #eef3f8; }
+.boton-mostrar:focus-visible,
+.boton-principal:focus-visible,
+.boton-secundario:focus-visible { outline: 3px solid var(--umar-oro); outline-offset: 2px; }
+
+.contador-contrasena { font-size: 0.8em; color: var(--color-secundario); }
+.contador-contrasena:empty { display: none; }
+.contador-contrasena.contador-ok { color: var(--color-exito); }
+.contador-contrasena.contador-excedido { color: var(--color-error); }
 
 .acciones-acceso {
     grid-column: 1 / -1;
@@ -224,7 +258,10 @@ body:has(.pantalla-acceso) .contenedor-principal > .mensaje {
 .mensaje-aviso { color: var(--color-aviso); border-color: var(--color-aviso); background: #fffaeb; }
 .panel-formulario .mensaje { max-width: 620px; margin: 0 0 16px; }
 
-.error-campo { color: var(--color-error); font-size: 0.85em; }
+.error-campo { margin: 0; color: var(--color-error); font-size: 0.85em; }
+.error-campo:not(:empty)::before { content: "\26A0\FE0E  "; }
+.error-campo.estado-ok { color: var(--color-exito); }
+.error-campo.estado-ok::before { content: "\2713  "; }
 .texto-secundario { color: var(--color-secundario); font-size: 0.85em; }
 
 .datos-cuenta dt { font-weight: 600; margin-top: 8px; color: var(--umar-marino); }

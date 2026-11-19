@@ -43,6 +43,9 @@ const RETENCION_INTENTOS_SEGUNDOS = 86400;
 /** Cierre automático por inactividad, en segundos (30 minutos). */
 const TIEMPO_INACTIVIDAD_SESION_SEGUNDOS = 1800;
 
+/** Mínimo permitido al reducir la inactividad con SESION_INACTIVIDAD_SEGUNDOS (demostraciones). */
+const TIEMPO_INACTIVIDAD_MINIMO_SEGUNDOS = 60;
+
 /** Duración máxima absoluta de una sesión, en segundos (8 horas). */
 const DURACION_MAXIMA_SESION_SEGUNDOS = 28800;
 

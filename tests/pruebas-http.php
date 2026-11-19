@@ -272,7 +272,8 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
                 '/config/database.php', '/config/permisos.php', '/.env', '/.env.example', '/.git/config',
                 '/storage/logs/app.log', '/storage/logs/php-errores.log', '/database/schema.sql',
                 '/database/usuario-aplicacion.sql', '/app/controllers/AuthController.php', '/app/views/login.php',
-                '/tests/ejecutar-pruebas.php', '/README.md', '/../config/database.php', '/%2e%2e/config/database.php',
+                '/tests/ejecutar-pruebas.php', '/README.md', '/config/contrasenas-comunes.txt',
+                '/laboratorio/inyeccion-sql/demostracion.php', '/laboratorio/inyeccion-sql/LaboratorioInyeccionSql.php', '/../config/database.php', '/%2e%2e/config/database.php',
             ] as $rutaPrivada) {
                 $respuesta = $cliente->obtener($rutaPrivada);
                 MarcoPruebas::afirmar(in_array($respuesta['codigo'], [403, 404], true), "{$rutaPrivada} devolvió {$respuesta['codigo']}");

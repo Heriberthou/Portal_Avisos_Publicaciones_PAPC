@@ -58,7 +58,7 @@ final class AuthController
 
         $validacion = ValidadorEntrada::validarDatosLogin($datosFormulario);
         if (!$validacion['valido']) {
-            return $this->vistaLogin('', 'Escribe tu correo electrónico y tu contraseña.', 422);
+            return $this->vistaLogin($validacion['correoPrevio'], null, 422, $validacion['errores']);
         }
 
         $correoElectronico = $validacion['datos']['correo_electronico'];
@@ -167,6 +167,7 @@ final class AuthController
             'usuarioActual'        => $usuarioActual,
             'mensajes'             => $this->gestorSesion->extraerMensajesFlash(),
             'puedeAdministrar'     => $this->roleMiddleware->tienePermiso((string) $usuarioActual['rol_usuario'], 'administrar_cuentas'),
+            'minutosInactividad'   => intdiv(GestorSesion::obtenerTiempoInactividadSegundos() + 59, 60),
         ]);
     }
 
@@ -203,15 +204,17 @@ final class AuthController
      * @param string $correoPrevio Correo a conservar en el formulario.
      * @param string|null $mensajeError Error general a mostrar.
      * @param int $codigoEstado Código HTTP.
+     * @param array<string, string> $errores Errores por campo (correo_electronico, contrasena).
      * @return Respuesta Vista de login.
      */
-    private function vistaLogin(string $correoPrevio, ?string $mensajeError, int $codigoEstado): Respuesta
+    private function vistaLogin(string $correoPrevio, ?string $mensajeError, int $codigoEstado, array $errores = []): Respuesta
     {
         return Respuesta::vista('login', [
             'tituloPagina'  => 'Iniciar sesión',
             'mensajes'      => $this->gestorSesion->extraerMensajesFlash(),
             'correoPrevio'  => $correoPrevio,
             'mensajeError'  => $mensajeError,
+            'errores'       => $errores,
         ], $codigoEstado);
     }
 

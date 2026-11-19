@@ -285,6 +285,28 @@ final class GestorSesion
     }
 
     /**
+     * Tiempo de inactividad tras el cual la sesión expira.
+     *
+     * Por omisión TIEMPO_INACTIVIDAD_SESION_SEGUNDOS (30 min). Para demostrar
+     * la expiración (E10-P07) puede reducirse en el .env con
+     * SESION_INACTIVIDAD_SEGUNDOS, entre 60 y el valor por omisión; nunca se
+     * permite alargarlo ni desactivarlo desde el .env.
+     *
+     * @return int Segundos de inactividad permitidos.
+     */
+    public static function obtenerTiempoInactividadSegundos(): int
+    {
+        $valorConfigurado = Configuracion::obtener('SESION_INACTIVIDAD_SEGUNDOS');
+        if ($valorConfigurado === null || $valorConfigurado === '') {
+            return TIEMPO_INACTIVIDAD_SESION_SEGUNDOS;
+        }
+        $segundos = filter_var($valorConfigurado, FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => TIEMPO_INACTIVIDAD_MINIMO_SEGUNDOS, 'max_range' => TIEMPO_INACTIVIDAD_SESION_SEGUNDOS],
+        ]);
+        return $segundos === false ? TIEMPO_INACTIVIDAD_SESION_SEGUNDOS : $segundos;
+    }
+
+    /**
      * Evalúa los límites de tiempo de la sesión.
      *
      * @param int $momentoActual Marca de tiempo UNIX actual.
@@ -295,7 +317,7 @@ final class GestorSesion
         $ultimaActividad = (int) ($_SESSION['ultimaActividad'] ?? 0);
         $fechaCreacion = (int) ($_SESSION['fechaCreacion'] ?? 0);
 
-        if ($momentoActual - $ultimaActividad > TIEMPO_INACTIVIDAD_SESION_SEGUNDOS) {
+        if ($momentoActual - $ultimaActividad > self::obtenerTiempoInactividadSegundos()) {
             return self::MOTIVO_INACTIVIDAD;
         }
         if ($momentoActual - $fechaCreacion > DURACION_MAXIMA_SESION_SEGUNDOS) {
