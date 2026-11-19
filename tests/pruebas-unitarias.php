@@ -103,7 +103,34 @@ return static function (MarcoPruebas $marco): void {
         MarcoPruebas::afirmarIgual('/', Respuesta::redireccion('//evil.example')->rutaRedireccion, 'Redirección externa se sustituye por /');
     });
 
-    $marco->probar('U04', 'Matriz RBAC: denegación por defecto y separación de roles', static function (): void {
+    $marco->probar('U05', 'Publicación en subcarpeta /papc: rutas, enlaces y cookie limitada', static function (): void {
+        $valorOriginal = getenv('APP_RUTA_BASE');
+        $uriOriginal = $_SERVER['REQUEST_URI'] ?? null;
+        try {
+            foreach (['/papc', 'papc/', '/papc/'] as $variante) {
+                putenv('APP_RUTA_BASE=' . $variante);
+                MarcoPruebas::afirmarIgual('/papc', Solicitud::obtenerRutaBase(), "Normaliza '{$variante}'");
+            }
+            $casos = ['/papc' => '/', '/papc/' => '/', '/papc/iniciar-sesion?x=1' => '/iniciar-sesion', '/papc/admin/usuarios/' => '/admin/usuarios', '/papcotro/inicio' => '/papcotro/inicio'];
+            foreach ($casos as $uri => $rutaEsperada) {
+                $_SERVER['REQUEST_URI'] = $uri;
+                MarcoPruebas::afirmarIgual($rutaEsperada, Solicitud::obtenerRuta(), "Ruta de {$uri}");
+            }
+            MarcoPruebas::afirmarIgual('/papc/inicio', Vista::url('/inicio'), 'Enlaces con prefijo');
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
+            GestorSesion::iniciarSesionPhp();
+            MarcoPruebas::afirmarIgual('/papc/', session_get_cookie_params()['path'], 'La cookie no se envía a otros proyectos del servidor');
+            MarcoPruebas::afirmar(str_ends_with(str_replace('\\', '/', session_save_path()), '/storage/sesiones'), 'Sesiones en storage/sesiones');
+            session_write_close();
+        } finally {
+            putenv($valorOriginal === false ? 'APP_RUTA_BASE' : 'APP_RUTA_BASE=' . $valorOriginal);
+            $_SERVER['REQUEST_URI'] = $uriOriginal;
+        }
+    });
+
+    $marco->probar('U04','Matriz RBAC: denegación por defecto y separación de roles', static function (): void {
         $auditoriaFalsa = (new ReflectionClass(AuditoriaModel::class))->newInstanceWithoutConstructor();
         $roleMiddleware = new RoleMiddleware(require RUTA_RAIZ . '/config/permisos.php', $auditoriaFalsa);
         $casos = [

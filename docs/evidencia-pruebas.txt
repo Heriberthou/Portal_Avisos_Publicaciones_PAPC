@@ -5,6 +5,7 @@
 [PASA] P13a    Token CSRF: aleatorio, por sesión y comparado de forma estricta
 [PASA] P14a    Escape de salida HTML contra XSS
 [PASA] U03     Prevención de redirección abierta
+[PASA] U05     Publicación en subcarpeta /papc: rutas, enlaces y cookie limitada
 [PASA] U04     Matriz RBAC: denegación por defecto y separación de roles
 [PASA] P01     Registro correcto de un alumno
 [PASA] P02     Registro de profesor: PENDIENTE y sin permisos adicionales
@@ -41,4 +42,4 @@
 [PASA] P16     Archivos privados no accesibles por HTTP directo
 [PASA] P15b    Intentos repetidos por HTTP: 429 aun con la contraseña correcta
 
-Total: 42 | Pasan: 42 | Fallan: 0
+Total: 43 | Pasan: 43 | Fallan: 0

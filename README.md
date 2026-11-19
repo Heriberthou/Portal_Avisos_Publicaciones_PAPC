@@ -84,13 +84,18 @@ papc/
 │   └── migraciones/                     [nuevo]   001 y 002 con su reversión
 ├── herramientas/
 │   └── inicializar-administrador-principal.php  [nuevo] Solo consola
-├── storage/logs/                        [Fase I]  app.log, php-errores.log (no públicos)
+├── storage/
+│   ├── logs/                            [Fase I]  app.log, php-errores.log (no públicos)
+│   └── sesiones/                        [nuevo]   Archivos de sesión propios (no compartidos)
 ├── public/
 │   ├── index.php                        [Fase I]  Único PHP público; solo delega en Aplicacion
 │   ├── .htaccess                        Reescritura a index.php, sin listados
 │   └── css/portal.css
 ├── tests/                               [Fase I]  Marco propio + 3 suites
-├── docs/evidencia-pruebas.txt           Salida real de la última ejecución
+├── docs/
+│   ├── evidencia-pruebas.txt            Salida real de la última ejecución
+│   └── xampp/papc.conf                  Alias /papc → public/ para XAMPP compartido
+├── .htaccess                            Red de seguridad: deniega todo si falta el Alias
 ├── .env.example                         Sin secretos
 └── README.md
 ```
@@ -166,80 +171,116 @@ duración máxima (8 h) → relee la cuenta de MariaDB → compara `version_sesi
 
 ---
 
-## Etapa 5. Configuración en XAMPP
+## Etapa 5. Instalación en el servidor XAMPP (`http://IP-DEL-SERVIDOR/papc/`)
 
-> Recomendado: coloca el proyecto **fuera** de `htdocs`, por ejemplo `C:\xampp\papc`.
+Escenario: un solo XAMPP compartido por varios equipos; cada proyecto vive en `htdocs` y se abre como
+`http://192.168.20.132/<proyecto>/`. Colocar el código en `htdocs` no es lo ideal, pero se resuelve de forma
+segura con un **`Alias`**: la URL `/papc` entra **solo** a `public/`; el resto del proyecto queda denegado
+aunque esté dentro de `htdocs`.
 
-1. **Comprobar Argon2id** en el PHP de XAMPP (si devuelve `false`, el sistema usa bcrypt costo 12 y limita la contraseña a 72 bytes):
+```
+C:\xampp\htdocs\papc\           ← carpeta del proyecto (denegada por Apache)
+├── public\                     ← lo único que se sirve como http://IP/papc/
+├── app\  config\  database\  storage\  tests\  herramientas\   (privados)
+└── .env                        ← se crea en el servidor; nunca se copia por chat o correo
+```
+
+1. **Copiar el proyecto** a `C:\xampp\htdocs\papc` (descomprime el zip de modo que exista
+   `C:\xampp\htdocs\papc\public\index.php`).
+
+2. **Configurar Apache** (una sola vez):
+   - Copia `docs\xampp\papc.conf` a `C:\xampp\apache\conf\extra\papc.conf`.
+   - Al **final** de `C:\xampp\apache\conf\httpd.conf` agrega la línea `Include conf/extra/papc.conf`.
+   - En el mismo `httpd.conf` confirma que la línea `LoadModule rewrite_module modules/mod_rewrite.so` **no** empiece con `#`.
+   - Reinicia Apache desde el panel de XAMPP. Si no arranca, revisa `C:\xampp\apache\logs\error.log`.
+
+   El `papc.conf` contiene:
+   ```apache
+   Alias /papc "C:/xampp/htdocs/papc/public"
+   <Directory "C:/xampp/htdocs/papc">
+       Require all denied
+       AllowOverride None
+       Options None
+   </Directory>
+   <Directory "C:/xampp/htdocs/papc/public">
+       Options SymLinksIfOwnerMatch
+       AllowOverride All
+       Require all granted
+   </Directory>
+   ```
+   `Options SymLinksIfOwnerMatch` es obligatorio: sin él Apache prohíbe `mod_rewrite` en `.htaccess` y
+   **todas** las páginas responden 403 (fallo encontrado y corregido al probar en Apache real).
+
+3. **Comprobar Argon2id** en el PHP de XAMPP (si devuelve `false`, se usa bcrypt costo 12 y la contraseña se limita a 72 bytes):
    ```powershell
    C:\xampp\php\php.exe -r "var_dump(defined('PASSWORD_ARGON2ID'));"
    ```
-2. **Crear la base y aplicar esquema y migraciones** (desde la carpeta del proyecto):
+
+4. **Crear la base** (desde `C:\xampp\htdocs\papc`). Si root de XAMPP no tiene contraseña, presiona Enter cuando la pida:
    ```powershell
-   C:\xampp\mysql\bin\mysql.exe -u root -p -e "CREATE DATABASE papc_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+   C:\xampp\mysql\bin\mysql.exe -u root -p --default-character-set=utf8mb4 -e "CREATE DATABASE papc_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; USE papc_db; source database/schema.sql; source database/migraciones/001-clasificacion-usuario.sql; source database/migraciones/002-intento-acceso.sql;"
    ```
-   ```powershell
-   Get-Content database\schema.sql, database\migraciones\001-clasificacion-usuario.sql, database\migraciones\002-intento-acceso.sql | C:\xampp\mysql\bin\mysql.exe -u root -p papc_db
-   ```
-3. **Cuenta de la aplicación**: genera una contraseña, reemplaza el marcador en una *copia local* de
-   `database/usuario-aplicacion.sql` y ejecútala como root. No subas esa copia al repositorio.
+
+5. **Cuenta MariaDB de la aplicación** (mínimos privilegios). Genera una contraseña:
    ```powershell
    C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(24));"
    ```
-4. **`.env`**: copia `.env.example` a `.env`, coloca `DB_CONTRASENA` y una `CLAVE_HUELLAS` nueva:
+   Copia `database\usuario-aplicacion.sql` a `C:\xampp\tmp\papc-usuario.sql`, reemplaza en la copia
+   `CAMBIAR_POR_CONTRASENA_LARGA_Y_ALEATORIA` por la contraseña generada, ejecútala y **borra la copia**:
+   ```powershell
+   C:\xampp\mysql\bin\mysql.exe -u root -p -e "source C:/xampp/tmp/papc-usuario.sql"
+   ```
+
+6. **Crear el `.env`** en `C:\xampp\htdocs\papc` a partir de `.env.example`:
+   `APP_RUTA_BASE=/papc` (ya viene así), `DB_CONTRASENA=` la del paso 5 y una `CLAVE_HUELLAS` nueva:
    ```powershell
    C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(32));"
    ```
-5. **VirtualHost con DocumentRoot = `public/`**. En `C:\xampp\apache\conf\httpd.conf` verifica que estén
-   activas `LoadModule rewrite_module modules/mod_rewrite.so` e `Include conf/extra/httpd-vhosts.conf`.
-   En `C:\xampp\apache\conf\extra\httpd-vhosts.conf`:
-   ```apache
-   # Mantiene http://localhost funcionando para phpMyAdmin
-   <VirtualHost *:80>
-       ServerName localhost
-       DocumentRoot "C:/xampp/htdocs"
-   </VirtualHost>
 
-   <VirtualHost *:80>
-       ServerName papc.test
-       DocumentRoot "C:/xampp/papc/public"
-
-       # Todo el proyecto queda denegado...
-       <Directory "C:/xampp/papc">
-           Require all denied
-           AllowOverride None
-       </Directory>
-       # ...excepto public/ (la sección más específica prevalece)
-       <Directory "C:/xampp/papc/public">
-           Options -Indexes -MultiViews
-           AllowOverride All
-           Require all granted
-       </Directory>
-
-       ErrorLog "logs/papc-error.log"
-       CustomLog "logs/papc-access.log" common
-   </VirtualHost>
-   ```
-   Agrega `127.0.0.1 papc.test` a `C:\Windows\System32\drivers\etc\hosts` (como administrador) y reinicia Apache.
-   Los `.htaccess` con `Require all denied` en `app/`, `config/`, `database/`, `storage/`, `tests/` y
-   `herramientas/` son **defensa adicional**, no el control principal.
-6. **Verificar que los archivos privados no se sirven** (debe responder 403/404 y el cuerpo no debe contener código ni credenciales):
+7. **Permitir el acceso desde la red**. En el servidor, en una PowerShell **como administrador**:
    ```powershell
-   foreach ($r in '/config/database.php','/.env','/storage/logs/app.log','/database/schema.sql','/tests/ejecutar-pruebas.php','/.git/config','/css/') { curl.exe -s -o NUL -w "$r -> %{http_code}`n" "http://papc.test$r" }
+   New-NetFirewallRule -DisplayName "Apache XAMPP (HTTP 80)" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow -Profile Private,Domain
    ```
-7. **Primer administrador principal** (no existen cuentas ni contraseñas predeterminadas): regístrate en
-   `http://papc.test/registro` con tu propia contraseña y, desde la consola del servidor:
+
+8. **Verificar desde otra computadora** de la red. `http://192.168.20.132/papc/` debe mostrar el inicio de
+   sesión, y estas rutas deben responder **403 o 404** (nunca 200):
    ```powershell
-   C:\xampp\php\php.exe herramientas\inicializar-administrador-principal.php tu.correo@dominio.mx
+   foreach ($r in '/papc/.env','/papc/.git/config','/papc/config/database.php','/papc/database/schema.sql','/papc/storage/logs/','/papc/tests/ejecutar-pruebas.php','/PAPC/.env','/papc/css/') { curl.exe -s -o NUL -w "$r -> %{http_code}`n" "http://192.168.20.132$r" }
+   ```
+   Si alguna da 200, **detén el servidor** y revisa los pasos 2 y 6 antes de continuar.
+
+9. **Primer administrador principal** (no hay cuentas ni contraseñas predeterminadas): regístrate en
+   `http://192.168.20.132/papc/registro` con tu propia contraseña y, en la consola del servidor:
+   ```powershell
+   C:\xampp\php\php.exe C:\xampp\htdocs\papc\herramientas\inicializar-administrador-principal.php tu.correo@dominio.mx
    ```
    Solo funciona si aún no hay ningún principal; queda auditado como `INICIALIZACION_ADMINISTRADOR_PRINCIPAL`.
-   Después, todo cambio de rol se hace en `/admin/usuarios` con re-autenticación.
+   Después, todo cambio de rol se hace en `/papc/admin/usuarios` con re-autenticación.
+
+### Red de seguridad si alguien olvida el `Alias`
+Si el proyecto se copia a `htdocs` sin el paso 2, el `.htaccess` de la raíz deniega todo (`.env`, `.git`,
+`config/`…) y solo `public/` responde, en `http://IP/papc/public/` (con `APP_RUTA_BASE=/papc/public`).
+Esto también se verificó en Apache real, pero **no** sustituye al paso 2.
+
+### Alternativa: VirtualHost propio
+Si algún día el proyecto tiene su propio dominio, basta un VirtualHost con `DocumentRoot` hacia
+`papc/public`, las mismas secciones `<Directory>` del `papc.conf` y `APP_RUTA_BASE=` vacío.
+
+### Consideraciones del servidor compartido
+- **Cookie aislada**: la cookie de sesión lleva `Path=/papc/`, así que el navegador no la envía a los
+  proyectos de los otros equipos.
+- **Sesiones propias**: se guardan en `storage/sesiones/` y no en `C:\xampp\tmp`, donde el recolector de
+  basura de otra aplicación podría borrarlas antes de tiempo.
+- **Límite que no puede resolverse por código**: todos los proyectos se ejecutan dentro del mismo proceso de
+  Apache, así que el PHP de otro equipo **podría leer** tu `.env` o tus sesiones en disco. Por eso la cuenta
+  `papc_app` tiene mínimos privilegios y sus contraseñas no deben reutilizarse en ningún otro lugar. Para
+  aislar de verdad haría falta un servidor (o máquina virtual) por proyecto.
 
 ### Desarrollo local vs. producción
 | Aspecto | Desarrollo (`APP_ENTORNO=desarrollo`) | Producción (`APP_ENTORNO=produccion`) |
 |---|---|---|
-| Transporte | HTTP en `papc.test` solo en tu equipo. **No equivale a HTTPS**: la cookie viaja sin cifrar. | HTTPS obligatorio (certificado válido, puerto 443). |
-| Cookie | `papc_sesion`, `HttpOnly`, `SameSite=Lax`, sin `Secure` | `__Host-papc_sesion`, `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` |
+| Transporte | HTTP. **No equivale a HTTPS**: en la red del laboratorio la contraseña y la cookie viajan sin cifrar. | HTTPS obligatorio (puerto 443; XAMPP trae un certificado autofirmado que el navegador marcará como no confiable). |
+| Cookie | `papc_sesion`, `Path=/papc/`, `HttpOnly`, `SameSite=Lax`, sin `Secure` | `__Secure-papc_sesion` (o `__Host-papc_sesion` si se publica en `/`), `Secure`, `HttpOnly`, `SameSite=Lax` |
 | HSTS | No | `Strict-Transport-Security` de 1 año |
 | Errores | Ocultos al usuario; en `storage/logs/` | Igual; además `display_errors=Off` en `php.ini` |
 
@@ -262,7 +303,21 @@ en `_pruebas`. La suite HTTP levanta `php -S` en el puerto 8097 con DocumentRoot
 
 ### Entorno de la ejecución real
 Las pruebas se ejecutaron el **19/11/2026** con **PHP 8.3.30 (Laragon) y MariaDB 11.5.2** en una instancia
-temporal aislada (localhost:3399), **no en XAMPP**. Resultado: **42 de 42 pasan** (`docs/evidencia-pruebas.txt`).
+temporal aislada (localhost:3399), **no en XAMPP**. Resultado: **43 de 43 pasan** (`docs/evidencia-pruebas.txt`).
+
+**Verificación en Apache real** (Apache 2.4.66 + PHP 8.3 como módulo, igual que XAMPP), con un `htdocs`
+configurado como el de XAMPP (`AllowOverride All`, `Options Indexes`), el `docs/xampp/papc.conf` sin cambios
+salvo la ruta, y la base instalada siguiendo la Etapa 5:
+
+| ID | Comprobación | Resultado |
+|---|---|---|
+| A01 | `/papc` → `/papc/` → login; enlaces y CSS con prefijo `/papc` | Pasa |
+| A02 | Registro, login, cookie `path=/papc/; HttpOnly; SameSite=Lax`, 403 en admin para USUARIO, logout y cookie vieja inválida | Pasa |
+| A03 | 24 rutas privadas con Alias (incl. `/PAPC/.env`, `/papc/%2e%2e/.env`, `/papc./.env`, `.git`, `storage/sesiones`) → 403/404 sin contenido | Pasa |
+| A04 | Sin Alias: `.htaccess` de la raíz deniega 9 rutas privadas; `public/` sigue funcionando | Pasa |
+
+Este script de humo se ejecutó desde fuera del repositorio; no se ha probado aún desde **otra computadora**
+por la red, ni en el XAMPP del servidor (paso 8 de la Etapa 5).
 
 ### Correspondencia con las 17 pruebas solicitadas
 | # | Prueba solicitada | IDs | Entrada principal | Resultado esperado | Observado |
@@ -287,8 +342,8 @@ temporal aislada (localhost:3399), **no en XAMPP**. Resultado: **42 de 42 pasan*
 
 Pruebas adicionales: P18 (re-autenticación y prohibición de cambiar el propio rol), P19 (inicialización única
 del principal), P20 (expiración por inactividad y duración máxima), P22 (mínimo privilegio en MariaDB),
-P23 (verificación de profesor sin cambio de rol), U01–U04 (validación, parámetros inesperados, redirección
-abierta, matriz RBAC).
+P23 (verificación de profesor sin cambio de rol), U01–U05 (validación, parámetros inesperados, redirección
+abierta, matriz RBAC, publicación en /papc).
 
 ### ¿Las pruebas detectan fallos? (prueba de mutación ejecutada)
 En una copia desechable se introdujo un defecto a la vez:
@@ -304,9 +359,12 @@ En una copia desechable se introdujo un defecto a la vez:
 ### Fallos encontrados durante el desarrollo
 - Una mutación no se aplicó por un problema de escape del comando `sed`; se detectó y repitió aplicándola con PHP.
 - La cuenta de pruebas se creaba con host `'%'`; se restringió a `127.0.0.1` y se elimina al terminar.
+- **En Apache real todas las páginas respondían 403** con el `Alias`: `Options None` en la carpeta del proyecto
+  desactivaba `FollowSymLinks` también en `public/` y Apache prohibía `mod_rewrite`. Se corrigió con
+  `Options SymLinksIfOwnerMatch` en `public/`. El servidor embebido de PHP no podía detectar este fallo.
 
 ### Pruebas diseñadas pero NO ejecutadas
-- **Apache/XAMPP real**: el servidor embebido de PHP no interpreta `.htaccess` ni el VirtualHost. Ejecuta el paso 6 de la Etapa 5.
+- **XAMPP del servidor y acceso desde otra computadora**: ejecuta el paso 8 de la Etapa 5.
 - **HTTPS y cookie `__Host-` con `Secure`**: requiere certificado; no se probó.
 - **Prueba de tiempos** (igualdad estadística de tiempos de respuesta con correo existente/inexistente): implementada la mitigación, no medida.
 
@@ -384,4 +442,7 @@ implementados y probados en el alcance indicado.
 7. **Suspensión de cuentas** por administradores: no implementada.
 8. **Concurrencia**: `session_regenerate_id(true)` periódico puede cerrar solicitudes simultáneas de una misma pestaña en casos raros.
 9. **Proxy inverso**: el origen se toma de `REMOTE_ADDR`; si se usa un proxy, ajustar `Solicitud::obtenerOrigen()`.
-10. Pendiente de ejecutar en XAMPP real: Etapa 5 paso 6 y las pruebas BD-01 a BD-06 de la Fase I sobre `papc_db`.
+10. Pendiente de ejecutar en el XAMPP del servidor: Etapa 5 paso 8 y las pruebas BD-01 a BD-06 de la Fase I sobre `papc_db`.
+11. **XAMPP compartido**: el código de otros proyectos del mismo Apache puede leer los archivos de PAPC
+    (`.env`, sesiones). Solo se mitiga con mínimos privilegios y contraseñas no reutilizadas; aislarlo requiere otro servidor.
+12. **HTTP en la red del laboratorio**: sin HTTPS, contraseñas y cookies viajan sin cifrar entre las computadoras.

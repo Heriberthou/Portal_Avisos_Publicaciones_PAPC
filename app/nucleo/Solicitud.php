@@ -35,12 +35,26 @@ final class Solicitud
     public static function obtenerRuta(): string
     {
         $ruta = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
-        $rutaBase = rtrim((string) Configuracion::obtener('APP_RUTA_BASE', ''), '/');
-        if ($rutaBase !== '' && str_starts_with($ruta, $rutaBase)) {
+        $rutaBase = self::obtenerRutaBase();
+        // Solo se recorta si coincide un segmento completo: "/papc" o "/papc/...",
+        // nunca "/papcotro".
+        if ($rutaBase !== '' && ($ruta === $rutaBase || str_starts_with($ruta, $rutaBase . '/'))) {
             $ruta = substr($ruta, strlen($rutaBase));
         }
         $ruta = '/' . trim($ruta, '/');
         return $ruta;
+    }
+
+    /**
+     * Prefijo de URL bajo el que se publica la aplicación (APP_RUTA_BASE),
+     * normalizado: vacío, o "/segmento" sin barra final (p. ej. "/papc").
+     *
+     * @return string Ruta base normalizada.
+     */
+    public static function obtenerRutaBase(): string
+    {
+        $rutaBase = trim((string) Configuracion::obtener('APP_RUTA_BASE', ''), '/');
+        return $rutaBase === '' ? '' : '/' . $rutaBase;
     }
 
     /**

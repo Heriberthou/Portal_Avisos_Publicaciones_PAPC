@@ -52,8 +52,7 @@ final class Vista
      */
     public static function url(string $rutaInterna): string
     {
-        $rutaBase = rtrim((string) Configuracion::obtener('APP_RUTA_BASE', ''), '/');
-        return $rutaBase . $rutaInterna;
+        return Solicitud::obtenerRutaBase() . $rutaInterna;
     }
 
     /**

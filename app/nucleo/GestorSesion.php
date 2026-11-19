@@ -37,12 +37,23 @@ final class GestorSesion
     {
     }
 
+    /** Directorio privado de archivos de sesión (fuera de public/). */
+    private const DIRECTORIO_SESIONES = '/storage/sesiones';
+
     /**
      * Configura e inicia la sesión PHP con parámetros seguros.
      *
-     * En producción la cookie se llama "__Host-papc_sesion": el navegador
-     * solo la acepta con Secure, Path=/ y sin Domain. En desarrollo local
-     * sobre HTTP se usa "papc_sesion" sin Secure; esto NO equivale a HTTPS.
+     * Cookie:
+     *  - Path = APP_RUTA_BASE (p. ej. "/papc/"): en un XAMPP compartido por
+     *    varios proyectos, el navegador NO envía la cookie de PAPC a los
+     *    demás proyectos del mismo servidor.
+     *  - Producción en la raíz del sitio: "__Host-papc_sesion" (exige Secure,
+     *    Path=/ y sin Domain). Producción en subcarpeta: "__Secure-papc_sesion"
+     *    (exige Secure). Desarrollo por HTTP: "papc_sesion" sin Secure; esto
+     *    NO equivale a HTTPS.
+     *
+     * Archivos de sesión en storage/sesiones: no se mezclan con los de otros
+     * proyectos ni los borra el recolector de basura de otra aplicación.
      *
      * @return void
      */
@@ -53,6 +64,12 @@ final class GestorSesion
         }
 
         $cookieSegura = Configuracion::esProduccion() || Solicitud::esHttps();
+        $rutaCookie = Solicitud::obtenerRutaBase() . '/';
+
+        $directorioSesiones = RUTA_RAIZ . self::DIRECTORIO_SESIONES;
+        if (is_dir($directorioSesiones) && is_writable($directorioSesiones)) {
+            session_save_path($directorioSesiones);
+        }
 
         ini_set('session.use_strict_mode', '1');
         ini_set('session.use_only_cookies', '1');
@@ -61,16 +78,31 @@ final class GestorSesion
         ini_set('session.gc_maxlifetime', (string) DURACION_MAXIMA_SESION_SEGUNDOS);
         session_cache_limiter('nocache');
 
-        session_name($cookieSegura ? '__Host-papc_sesion' : 'papc_sesion');
+        session_name(self::obtenerNombreCookie($cookieSegura, $rutaCookie));
         session_set_cookie_params([
             'lifetime' => 0,
-            'path'     => '/',
+            'path'     => $rutaCookie,
             'secure'   => $cookieSegura,
             'httponly' => true,
             'samesite' => 'Lax',
         ]);
 
         session_start();
+    }
+
+    /**
+     * Elige el nombre de la cookie según HTTPS y la ruta publicada.
+     *
+     * @param bool $cookieSegura Si la cookie lleva el atributo Secure.
+     * @param string $rutaCookie Ruta de la cookie ("/" o "/papc/").
+     * @return string Nombre de la cookie de sesión.
+     */
+    private static function obtenerNombreCookie(bool $cookieSegura, string $rutaCookie): string
+    {
+        if (!$cookieSegura) {
+            return 'papc_sesion';
+        }
+        return $rutaCookie === '/' ? '__Host-papc_sesion' : '__Secure-papc_sesion';
     }
 
     /**

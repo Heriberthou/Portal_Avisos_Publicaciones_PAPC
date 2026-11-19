@@ -1,0 +1,10 @@
+# PAPC | Red de seguridad para la raíz del proyecto.
+#
+# Con la configuración recomendada (docs/xampp/papc.conf) Apache NUNCA lee
+# este archivo: el Alias /papc apunta directo a public/ y la carpeta del
+# proyecto tiene "AllowOverride None".
+#
+# Si alguien copia el proyecto a htdocs y olvida el Alias, este archivo
+# impide descargar .env, .git, config/, database/, etc. Solo public/ (que
+# tiene su propio "Require all granted") queda accesible.
+Require all denied

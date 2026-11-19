@@ -1,10 +1,19 @@
 # Secretos y configuración local
 .env
 
-# Registros y datos generados en tiempo de ejecución
+# Registros y sesiones generados en tiempo de ejecución
 storage/logs/*
 !storage/logs/.gitkeep
 !storage/logs/.htaccess
+storage/sesiones/*
+!storage/sesiones/.gitkeep
+!storage/sesiones/.htaccess
+
+# Paquetes generados para instalar en el servidor
+dist/
+
+# Copia del esquema original de la Fase I (la versión del proyecto es database/schema.sql)
+/esquema_papc_nomenclatura_v1_2.sql
 
 # Respaldos de base de datos
 *.sql.bak
