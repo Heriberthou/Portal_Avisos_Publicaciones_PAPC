@@ -51,7 +51,11 @@ const INTERVALO_REGENERACION_SESION_SEGUNDOS = 900;
 
 /* ------------------------------ Entradas --------------------------- */
 
-/** Longitudes según las columnas reales de la tabla usuario. */
-const LONGITUD_MINIMA_NOMBRE_USUARIO = 2;
+/** Longitudes según las columnas reales de la tabla usuario (migración 003). */
+const LONGITUD_MINIMA_PARTE_NOMBRE = 2;
+const LONGITUD_MAXIMA_NOMBRES_USUARIO = 60;
+const LONGITUD_MAXIMA_APELLIDO_USUARIO = 50;
+
+/** Máximo del nombre completo calculado (nombre_usuario VARCHAR(100) y chk_usuario_nombre_usuario). */
 const LONGITUD_MAXIMA_NOMBRE_USUARIO = 100;
 const LONGITUD_MAXIMA_CORREO_ELECTRONICO = 150;

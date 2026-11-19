@@ -38,11 +38,23 @@ $mostrarErrorCampo = static function (array $errores, string $campo): string {
     <form method="post" action="<?= Vista::escapar(Vista::url('/registro')) ?>" class="formulario-autenticacion" novalidate>
         <?= Vista::campoTokenCsrf() ?>
 
-        <label for="nombre-usuario">Nombre completo</label>
-        <input id="nombre-usuario" name="nombre_usuario" type="text" required
-               maxlength="<?= LONGITUD_MAXIMA_NOMBRE_USUARIO ?>" autocomplete="name"
-               value="<?= Vista::escapar($valoresPrevios['nombre_usuario'] ?? '') ?>">
-        <?= $mostrarErrorCampo($errores, 'nombre_usuario') ?>
+        <label for="nombres-usuario">Nombre(s)</label>
+        <input id="nombres-usuario" name="nombres_usuario" type="text" required
+               maxlength="<?= LONGITUD_MAXIMA_NOMBRES_USUARIO ?>" autocomplete="given-name"
+               value="<?= Vista::escapar($valoresPrevios['nombres_usuario'] ?? '') ?>">
+        <?= $mostrarErrorCampo($errores, 'nombres_usuario') ?>
+
+        <label for="apellido-paterno-usuario">Apellido paterno</label>
+        <input id="apellido-paterno-usuario" name="apellido_paterno_usuario" type="text" required
+               maxlength="<?= LONGITUD_MAXIMA_APELLIDO_USUARIO ?>" autocomplete="family-name"
+               value="<?= Vista::escapar($valoresPrevios['apellido_paterno_usuario'] ?? '') ?>">
+        <?= $mostrarErrorCampo($errores, 'apellido_paterno_usuario') ?>
+
+        <label for="apellido-materno-usuario">Apellido materno <span class="texto-secundario">(opcional)</span></label>
+        <input id="apellido-materno-usuario" name="apellido_materno_usuario" type="text"
+               maxlength="<?= LONGITUD_MAXIMA_APELLIDO_USUARIO ?>" autocomplete="additional-name"
+               value="<?= Vista::escapar($valoresPrevios['apellido_materno_usuario'] ?? '') ?>">
+        <?= $mostrarErrorCampo($errores, 'apellido_materno_usuario') ?>
 
         <label for="correo-electronico">Correo electrónico</label>
         <input id="correo-electronico" name="correo_electronico" type="email" required

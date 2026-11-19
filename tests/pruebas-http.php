@@ -43,11 +43,15 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
     $contrasenaComun = 'frase de paso http de pruebas';
     $nuevoCliente = static fn (): ClienteHttp => new ClienteHttp($urlBase);
 
+    // "Ana Alumna" => nombres "Ana", apellido paterno "Alumna"; materno vacío (opcional).
     $registrarPorHttp = static function (string $nombre, string $correo, string $tipo) use ($nuevoCliente, $contrasenaComun): array {
         $cliente = $nuevoCliente();
+        [$nombres, $apellidoPaterno] = explode(' ', $nombre, 2);
         return $cliente->enviar('/registro', [
-            'token_csrf'              => $cliente->obtenerTokenDe('/registro'),
-            'nombre_usuario'          => $nombre,
+            'token_csrf'               => $cliente->obtenerTokenDe('/registro'),
+            'nombres_usuario'          => $nombres,
+            'apellido_paterno_usuario' => $apellidoPaterno,
+            'apellido_materno_usuario' => '',
             'correo_electronico'      => $correo,
             'contrasena'              => $contrasenaComun,
             'confirmacion_contrasena' => $contrasenaComun,
@@ -87,7 +91,7 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
                 MarcoPruebas::afirmarIgual('/iniciar-sesion', $obtenerUbicacion($respuesta), 'Redirige al login');
                 MarcoPruebas::afirmarIgual('USUARIO', $baseDatos->obtenerFilaUsuario($correo)['rol_usuario'], "Rol de {$correo}");
             }
-            MarcoPruebas::afirmarIgual(409, $registrarPorHttp('Duplicada', 'ANA@http.mx', 'ALUMNO')['codigo'], 'Duplicado rechazado (409)');
+            MarcoPruebas::afirmarIgual(409, $registrarPorHttp('Ana Duplicada', 'ANA@http.mx', 'ALUMNO')['codigo'], 'Duplicado rechazado (409)');
         });
 
         $marco->probar('H02', 'Herramienta de consola inicializa al principal una sola vez y no es accesible por web', static function () use ($variablesEntorno, $baseDatos, $nuevoCliente): void {
@@ -177,7 +181,8 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
             $cliente = $nuevoCliente();
             $respuesta = $cliente->enviar('/registro', [
                 'token_csrf'                  => $cliente->obtenerTokenDe('/registro'),
-                'nombre_usuario'              => 'Mallory',
+                'nombres_usuario'             => 'Mallory',
+                'apellido_paterno_usuario'    => 'Atacante',
                 'correo_electronico'          => 'mallory@http.mx',
                 'contrasena'                  => $contrasenaComun,
                 'confirmacion_contrasena'     => $contrasenaComun,

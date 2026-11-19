@@ -28,9 +28,13 @@ final class UsuarioModel
     public const VERIFICACION_VERIFICADA = 'VERIFICADA';
     public const VERIFICACION_RECHAZADA = 'RECHAZADA';
 
-    /** Columnas públicas: nunca incluye hash_contrasena_usuario. */
-    private const COLUMNAS_SIN_HASH = 'id_usuario, nombre_usuario, correo_electronico_usuario, rol_usuario,
-        tipo_integrante_usuario, estado_verificacion_usuario, version_sesion_usuario, fecha_registro_usuario';
+    /**
+     * Columnas públicas: nunca incluye hash_contrasena_usuario.
+     * nombre_usuario es una columna calculada por MariaDB (migración 003).
+     */
+    private const COLUMNAS_SIN_HASH = 'id_usuario, nombres_usuario, apellido_paterno_usuario, apellido_materno_usuario,
+        nombre_usuario, correo_electronico_usuario, rol_usuario, tipo_integrante_usuario,
+        estado_verificacion_usuario, version_sesion_usuario, fecha_registro_usuario';
 
     /**
      * @param PDO $conexion Conexión de config/database.php.
@@ -107,29 +111,39 @@ final class UsuarioModel
      *
      * Seguridad: rol_usuario se fija en el SQL como 'USUARIO' y NO es un
      * parámetro del método; ningún dato del formulario puede alterarlo.
+     * nombre_usuario no se inserta: MariaDB lo calcula a partir de las partes.
      *
-     * @param string $nombreUsuario Nombre validado.
+     * @param string $nombresUsuario Nombre(s) validado(s).
+     * @param string $apellidoPaterno Apellido paterno validado.
+     * @param string|null $apellidoMaterno Apellido materno o null si no tiene.
      * @param string $correoElectronico Correo normalizado.
      * @param string $hashContrasena Hash generado por GestorContrasenas.
      * @param string $tipoIntegrante ALUMNO o PROFESOR.
      * @param string $estadoVerificacion NO_REQUERIDA o PENDIENTE.
      * @return int Id de la cuenta creada.
-     * @throws PDOException Si el correo ya existe (UNIQUE) u otro error.
+     * @throws PDOException Si el correo ya existe (UNIQUE), el nombre completo
+     *                      excede 100 caracteres (CHECK) u otro error.
      */
     public function crearUsuario(
-        string $nombreUsuario,
+        string $nombresUsuario,
+        string $apellidoPaterno,
+        ?string $apellidoMaterno,
         string $correoElectronico,
         string $hashContrasena,
         string $tipoIntegrante,
         string $estadoVerificacion
     ): int {
         $sentencia = $this->conexion->prepare(
-            "INSERT INTO usuario (nombre_usuario, correo_electronico_usuario, hash_contrasena_usuario,
+            "INSERT INTO usuario (nombres_usuario, apellido_paterno_usuario, apellido_materno_usuario,
+                 correo_electronico_usuario, hash_contrasena_usuario,
                  rol_usuario, tipo_integrante_usuario, estado_verificacion_usuario)
-             VALUES (:nombreUsuario, :correoElectronico, :hashContrasena, 'USUARIO', :tipoIntegrante, :estadoVerificacion)"
+             VALUES (:nombresUsuario, :apellidoPaterno, :apellidoMaterno,
+                 :correoElectronico, :hashContrasena, 'USUARIO', :tipoIntegrante, :estadoVerificacion)"
         );
         $sentencia->execute([
-            'nombreUsuario'      => $nombreUsuario,
+            'nombresUsuario'     => $nombresUsuario,
+            'apellidoPaterno'    => $apellidoPaterno,
+            'apellidoMaterno'    => $apellidoMaterno,
             'correoElectronico'  => $correoElectronico,
             'hashContrasena'     => $hashContrasena,
             'tipoIntegrante'     => $tipoIntegrante,

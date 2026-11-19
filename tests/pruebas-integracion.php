@@ -28,10 +28,14 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos): void 
         $_SESSION = [];
     };
 
+    // "Ana Alumna" => nombres "Ana", apellido paterno "Alumna" (sin materno).
     $registrar = static function (string $nombre, string $correo, string $tipo) use ($servicioAutenticacion, $contrasenaComun): array {
+        [$nombres, $apellidoPaterno] = explode(' ', $nombre, 2);
         return $servicioAutenticacion->registrarUsuario([
-            'nombre_usuario'     => $nombre,
-            'correo_electronico' => $correo,
+            'nombres_usuario'          => $nombres,
+            'apellido_paterno_usuario' => $apellidoPaterno,
+            'apellido_materno_usuario' => null,
+            'correo_electronico'       => $correo,
             'contrasena'         => $contrasenaComun,
             'tipo_integrante'    => $tipo,
         ]);
@@ -86,7 +90,23 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos): void 
         MarcoPruebas::afirmar(!str_contains($detalles, $contrasenaComun) && !str_contains($detalles, '$argon2id$'), 'La auditoría no contiene contraseñas ni hashes');
     });
 
-    $marco->probar('P06', 'Inicio de sesión válido regenera el identificador de sesión', static function () use ($servicioAutenticacion, $reiniciarSesion, $contrasenaComun, $baseDatos): void {
+    $marco->probar('P24', 'Nombre atómico en la BD: columna calculada, materno NULL y CHECK de 100', static function () use ($baseDatos, $usuarioModel): void {
+        $fila = $baseDatos->obtenerFilaUsuario('ana.alumna@ejemplo.mx');
+        MarcoPruebas::afirmarIgual(['Ana', 'Alumna', null, 'Ana Alumna'], [$fila['nombres_usuario'], $fila['apellido_paterno_usuario'], $fila['apellido_materno_usuario'], $fila['nombre_usuario']], 'Partes y nombre calculado');
+        $idCompleto = $usuarioModel->crearUsuario('Luz María', 'Hernández', 'de la Cruz', 'luz@ejemplo.mx', 'hash-ficticio', 'ALUMNO', 'NO_REQUERIDA');
+        MarcoPruebas::afirmarIgual('Luz María Hernández de la Cruz', $usuarioModel->obtenerUsuarioPorId($idCompleto)['nombre_usuario'], 'CONCAT_WS con materno');
+        $rechazadoPorCheck = false;
+        try {
+            // Defensa en profundidad: aunque el validador se omitiera, MariaDB rechaza el exceso.
+            $usuarioModel->crearUsuario(str_repeat('a', 60), str_repeat('b', 30), str_repeat('c', 30), 'largo@ejemplo.mx', 'hash-ficticio', 'ALUMNO', 'NO_REQUERIDA');
+        } catch (PDOException) {
+            $rechazadoPorCheck = true;
+        }
+        MarcoPruebas::afirmar($rechazadoPorCheck, 'chk_usuario_nombre_usuario rechaza más de 100 caracteres');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaUsuario('largo@ejemplo.mx'), 'Sin fila insertada');
+    });
+
+    $marco->probar('P06','Inicio de sesión válido regenera el identificador de sesión', static function () use ($servicioAutenticacion, $reiniciarSesion, $contrasenaComun, $baseDatos): void {
         $reiniciarSesion();
         $idSesionAnonima = session_id();
         $resultado = $servicioAutenticacion->iniciarSesion('ana.alumna@ejemplo.mx', $contrasenaComun, '192.0.2.1');
@@ -304,7 +324,8 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos): void 
         $enrutador = $construirEnrutador();
         $datosManipulados = [
             'token_csrf'              => ProtectorCsrf::generarTokenCsrf(),
-            'nombre_usuario'          => 'Mallory',
+            'nombres_usuario'         => 'Mallory',
+            'apellido_paterno_usuario' => 'Atacante',
             'correo_electronico'      => 'mallory@ejemplo.mx',
             'contrasena'              => 'frase de paso de pruebas numero uno',
             'confirmacion_contrasena' => 'frase de paso de pruebas numero uno',

@@ -8,9 +8,11 @@ declare(strict_types=1);
 
 return static function (MarcoPruebas $marco): void {
     $datosRegistroValidos = [
-        'token_csrf'              => 'x',
-        'nombre_usuario'          => 'María José Pérez',
-        'correo_electronico'      => '  Maria.Perez@Ejemplo.MX ',
+        'token_csrf'               => 'x',
+        'nombres_usuario'          => '  María   José ',
+        'apellido_paterno_usuario' => 'Pérez',
+        'apellido_materno_usuario' => 'de la Garza',
+        'correo_electronico'       => '  Maria.Perez@Ejemplo.MX ',
         'contrasena'              => 'una frase de paso bastante larga',
         'confirmacion_contrasena' => 'una frase de paso bastante larga',
         'tipo_integrante'         => 'ALUMNO',
@@ -20,13 +22,39 @@ return static function (MarcoPruebas $marco): void {
         $validacion = ValidadorEntrada::validarDatosRegistro($datosRegistroValidos);
         MarcoPruebas::afirmar($validacion['valido'], 'Debería ser válido: ' . json_encode($validacion['errores']));
         MarcoPruebas::afirmarIgual('maria.perez@ejemplo.mx', $validacion['datos']['correo_electronico'], 'Correo normalizado');
+        MarcoPruebas::afirmarIgual('María José', $validacion['datos']['nombres_usuario'], 'Espacios de nombres normalizados');
+        MarcoPruebas::afirmarIgual('de la Garza', $validacion['datos']['apellido_materno_usuario'], 'Apellido materno compuesto');
+    });
+
+    $marco->probar('U06', 'Nombre atómico: materno opcional y nombre completo de máximo 100', static function () use ($datosRegistroValidos): void {
+        foreach (['', '   '] as $maternoVacio) {
+            $validacion = ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, ['apellido_materno_usuario' => $maternoVacio]));
+            MarcoPruebas::afirmar($validacion['valido'], 'Materno vacío permitido: ' . json_encode($validacion['errores']));
+            MarcoPruebas::afirmarIgual(null, $validacion['datos']['apellido_materno_usuario'], 'Materno vacío se guarda como NULL');
+        }
+        $sinMaterno = $datosRegistroValidos;
+        unset($sinMaterno['apellido_materno_usuario']);
+        MarcoPruebas::afirmar(ValidadorEntrada::validarDatosRegistro($sinMaterno)['valido'], 'Materno omitido permitido');
+
+        $nombreLargo = ['nombres_usuario' => str_repeat('a', 60), 'apellido_paterno_usuario' => str_repeat('b', 20), 'apellido_materno_usuario' => str_repeat('c', 20)];
+        $validacion = ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, $nombreLargo));
+        MarcoPruebas::afirmar(!$validacion['valido'] && isset($validacion['errores']['nombres_usuario']), '60+1+20+1+20 = 102 caracteres se rechaza');
+        $nombreLimite = ['nombres_usuario' => str_repeat('a', 58), 'apellido_paterno_usuario' => str_repeat('b', 20), 'apellido_materno_usuario' => str_repeat('c', 20)];
+        MarcoPruebas::afirmar(ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, $nombreLimite))['valido'], '58+1+20+1+20 = 100 caracteres se acepta');
+        MarcoPruebas::afirmarIgual(['nombre_usuario'], ValidadorEntrada::obtenerCamposProtegidos(['nombre_usuario' => 'X']), 'nombre_usuario (calculado) es campo protegido');
     });
 
     $marco->probar('P04', 'Rechazo de campos inválidos en el registro', static function () use ($datosRegistroValidos): void {
         $casosInvalidos = [
-            'nombre vacío'             => ['nombre_usuario' => '', 'campo' => 'nombre_usuario'],
-            'nombre con etiquetas'     => ['nombre_usuario' => '<script>alert(1)</script>', 'campo' => 'nombre_usuario'],
-            'nombre de 101 caracteres' => ['nombre_usuario' => str_repeat('a', 101), 'campo' => 'nombre_usuario'],
+            'nombres vacíos'           => ['nombres_usuario' => '', 'campo' => 'nombres_usuario'],
+            'nombres con etiquetas'    => ['nombres_usuario' => '<script>alert(1)</script>', 'campo' => 'nombres_usuario'],
+            'nombres de 61 caracteres' => ['nombres_usuario' => str_repeat('a', 61), 'campo' => 'nombres_usuario'],
+            'paterno vacío'            => ['apellido_paterno_usuario' => '   ', 'campo' => 'apellido_paterno_usuario'],
+            'paterno de 1 carácter'    => ['apellido_paterno_usuario' => 'P', 'campo' => 'apellido_paterno_usuario'],
+            'paterno de 51 caracteres' => ['apellido_paterno_usuario' => str_repeat('p', 51), 'campo' => 'apellido_paterno_usuario'],
+            'paterno con números'      => ['apellido_paterno_usuario' => 'Pérez2', 'campo' => 'apellido_paterno_usuario'],
+            'materno con etiquetas'    => ['apellido_materno_usuario' => '<b>x</b>', 'campo' => 'apellido_materno_usuario'],
+            'materno como arreglo'     => ['apellido_materno_usuario' => ['a'], 'campo' => 'apellido_materno_usuario'],
             'correo sin arroba'        => ['correo_electronico' => 'correo-invalido', 'campo' => 'correo_electronico'],
             'correo de 151 caracteres' => ['correo_electronico' => str_repeat('a', 140) . '@ejemplo.mx', 'campo' => 'correo_electronico'],
             'contraseña de 14'         => ['contrasena' => str_repeat('a', 14), 'confirmacion_contrasena' => str_repeat('a', 14), 'campo' => 'contrasena'],
@@ -34,8 +62,8 @@ return static function (MarcoPruebas $marco): void {
             'confirmación distinta'    => ['confirmacion_contrasena' => 'otra frase de paso diferente', 'campo' => 'confirmacion_contrasena'],
             'tipo no permitido'        => ['tipo_integrante' => 'ADMINISTRADOR', 'campo' => 'tipo_integrante'],
             'tipo en minúsculas'       => ['tipo_integrante' => 'profesor', 'campo' => 'tipo_integrante'],
-            'nombre como arreglo'      => ['nombre_usuario' => ['a', 'b'], 'campo' => 'nombre_usuario'],
-            'UTF-8 inválido'           => ['nombre_usuario' => "Ana\xC3\x28", 'campo' => 'nombre_usuario'],
+            'nombres como arreglo'     => ['nombres_usuario' => ['a', 'b'], 'campo' => 'nombres_usuario'],
+            'UTF-8 inválido'           => ['nombres_usuario' => "Ana\xC3\x28", 'campo' => 'nombres_usuario'],
         ];
         foreach ($casosInvalidos as $nombreCaso => $caso) {
             $campoEsperado = $caso['campo'];

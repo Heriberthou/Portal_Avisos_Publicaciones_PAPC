@@ -1,4 +1,5 @@
 [PASA] U01     Validación acepta un registro correcto y normaliza el correo
+[PASA] U06     Nombre atómico: materno opcional y nombre completo de máximo 100
 [PASA] P04     Rechazo de campos inválidos en el registro
 [PASA] U02     Detección de parámetros inesperados y campos protegidos
 [PASA] P05a    Hash con Argon2id, salado y verificable (sin texto claro)
@@ -11,6 +12,7 @@
 [PASA] P02     Registro de profesor: PENDIENTE y sin permisos adicionales
 [PASA] P03     Rechazo de correos duplicados (incluso con mayúsculas)
 [PASA] P05b    Contraseña almacenada como hash Argon2id en la BD
+[PASA] P24     Nombre atómico en la BD: columna calculada, materno NULL y CHECK de 100
 [PASA] P06     Inicio de sesión válido regenera el identificador de sesión
 [PASA] P07     Credenciales incorrectas: respuesta idéntica exista o no el correo
 [PASA] P08a    Cerrar sesión elimina la sesión del servidor
@@ -42,4 +44,4 @@
 [PASA] P16     Archivos privados no accesibles por HTTP directo
 [PASA] P15b    Intentos repetidos por HTTP: 429 aun con la contraseña correcta
 
-Total: 43 | Pasan: 43 | Fallan: 0
+Total: 45 | Pasan: 45 | Fallan: 0
