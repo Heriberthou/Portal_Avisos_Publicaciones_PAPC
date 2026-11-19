@@ -1,0 +1,11 @@
+# Secretos y configuración local
+.env
+
+# Registros y datos generados en tiempo de ejecución
+storage/logs/*
+!storage/logs/.gitkeep
+!storage/logs/.htaccess
+
+# Respaldos de base de datos
+*.sql.bak
+respaldo_*.sql

@@ -1,0 +1,16 @@
+# PAPC | Configuración de Apache para el ÚNICO directorio público.
+
+# Sin listado de directorios.
+Options -Indexes -MultiViews
+
+# Nunca servir archivos ocultos, respaldos ni fuentes por error copiados aquí.
+<FilesMatch "(^\.|\.(sql|env|log|bak|ini|md|lock|dist)$)">
+    Require all denied
+</FilesMatch>
+
+# Enrutamiento frontal: lo que no sea un archivo real va a index.php.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
