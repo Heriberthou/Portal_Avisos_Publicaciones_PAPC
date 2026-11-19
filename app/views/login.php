@@ -10,27 +10,38 @@
  */
 declare(strict_types=1);
 ?>
-<section class="tarjeta-formulario">
-    <h1>Iniciar sesión</h1>
+<div class="pantalla-acceso">
+    <?php require RUTA_RAIZ . '/app/views/parciales/panel-institucional.php'; ?>
 
-    <?php if (!empty($datosVista['mensajeError'])): ?>
-        <p class="mensaje mensaje-error" role="alert"><?= Vista::escapar($datosVista['mensajeError']) ?></p>
-    <?php endif; ?>
+    <section class="panel-formulario">
+        <h1 class="titulo-acceso">Iniciar sesión</h1>
 
-    <form method="post" action="<?= Vista::escapar(Vista::url('/iniciar-sesion')) ?>" class="formulario-autenticacion" novalidate>
-        <?= Vista::campoTokenCsrf() ?>
+        <?php if (!empty($datosVista['mensajeError'])): ?>
+            <p class="mensaje mensaje-error" role="alert"><?= Vista::escapar($datosVista['mensajeError']) ?></p>
+        <?php endif; ?>
 
-        <label for="correo-electronico">Correo electrónico</label>
-        <input id="correo-electronico" name="correo_electronico" type="email" required
-               maxlength="<?= LONGITUD_MAXIMA_CORREO_ELECTRONICO ?>" autocomplete="username"
-               value="<?= Vista::escapar($datosVista['correoPrevio'] ?? '') ?>">
+        <form method="post" action="<?= Vista::escapar(Vista::url('/iniciar-sesion')) ?>" class="rejilla-campos" novalidate>
+            <?= Vista::campoTokenCsrf() ?>
 
-        <label for="contrasena">Contraseña</label>
-        <input id="contrasena" name="contrasena" type="password" required
-               maxlength="<?= LONGITUD_MAXIMA_CONTRASENA ?>" autocomplete="current-password">
+            <div class="campo campo-ancho">
+                <label for="correo-electronico">Correo electrónico</label>
+                <input id="correo-electronico" name="correo_electronico" type="email" required
+                       maxlength="<?= LONGITUD_MAXIMA_CORREO_ELECTRONICO ?>" autocomplete="username"
+                       placeholder="usuario@ejemplo.com"
+                       value="<?= Vista::escapar($datosVista['correoPrevio'] ?? '') ?>">
+            </div>
 
-        <button type="submit" class="boton-principal">Entrar</button>
-    </form>
+            <div class="campo campo-ancho">
+                <label for="contrasena">Contraseña</label>
+                <input id="contrasena" name="contrasena" type="password" required
+                       maxlength="<?= LONGITUD_MAXIMA_CONTRASENA ?>" autocomplete="current-password"
+                       placeholder="••••••••••••">
+            </div>
 
-    <p class="texto-secundario">¿No tienes cuenta? <a href="<?= Vista::escapar(Vista::url('/registro')) ?>">Regístrate</a></p>
-</section>
+            <div class="acciones-acceso">
+                <button type="submit" class="boton-principal">Entrar</button>
+                <p class="texto-secundario">¿No tienes cuenta? <a href="<?= Vista::escapar(Vista::url('/registro')) ?>">Regístrate</a></p>
+            </div>
+        </form>
+    </section>
+</div>

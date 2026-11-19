@@ -18,7 +18,11 @@ $mensajesFlash = $datosVista['mensajes'] ?? [];
 </head>
 <body>
 <header class="barra-superior">
-    <span class="nombre-portal"><?= Vista::escapar(NOMBRE_APLICACION) ?></span>
+    <img class="logo-barra" src="<?= Vista::escapar(Vista::url('/img/logo-umar.png')) ?>" alt="" width="44" height="44">
+    <span class="textos-barra">
+        <span class="nombre-portal"><?= Vista::escapar(NOMBRE_APLICACION) ?></span>
+        <span class="nombre-institucion">Universidad del Mar · Campus Puerto Escondido</span>
+    </span>
 </header>
 <main class="contenedor-principal">
 <?php foreach ($mensajesFlash as $mensajeFlash): ?>
