@@ -7,7 +7,7 @@ declare(strict_types=1);
  *
  * Seguridad de las pruebas:
  *  - Solo opera sobre bases cuyo nombre termina en "_pruebas"; se niega a
- *    tocar papc_db u otra base real.
+ *    tocar equipo_7, papc_db u otra base real.
  *  - Recrea la base desde database/schema.sql + migraciones, es decir,
  *    prueba los mismos archivos que se entregan.
  *  - Crea una cuenta de aplicación con los mismos GRANT de
@@ -72,7 +72,7 @@ final class BaseDatosPruebas
         $this->conexionAdministrativa->exec("DROP USER IF EXISTS '{$usuarioApp}'@'127.0.0.1'");
         $scriptPermisos = (string) file_get_contents(RUTA_RAIZ . '/database/usuario-aplicacion.sql');
         $scriptPermisos = str_replace(
-            ["'papc_app'@'localhost'", 'papc_db.', 'CAMBIAR_POR_CONTRASENA_LARGA_Y_ALEATORIA'],
+            ["'papc_app'@'localhost'", 'equipo_7.', 'CAMBIAR_POR_CONTRASENA_LARGA_Y_ALEATORIA'],
             ["'{$usuarioApp}'@'127.0.0.1'", "{$base}.", $this->contrasenaAplicacion],
             $scriptPermisos
         );

@@ -23,7 +23,7 @@ Fuentes: `Fase_I_Diseno_Arquitectura_PAPC_Nomenclatura_v1_2.pdf` y `esquema_papc
 ### Incompatibilidades y datos faltantes detectados
 | # | Hallazgo | Decisión |
 |---|----------|----------|
-| 1 | El SQL hace `USE equipo_7;`, pero NOM-01 y la consigna usan `papc_db`. | `database/schema.sql` es copia literal del original con **solo** esa línea comentada; la base se elige al importar (`papc_db`). |
+| 1 | El SQL hace `USE equipo_7;`, pero NOM-01 y la consigna usan `papc_db`. | `database/schema.sql` es copia literal del original con **solo** esa línea comentada; la base se elige en el `.env`. En el servidor del laboratorio es **`equipo_7`** (asignada por la institución, también cumple NOM-01). |
 | 2 | El PDF dice que el SQL incluye `CREATE DATABASE`; el archivo no lo incluye. | Se documenta el `CREATE DATABASE` en la instalación (Etapa 5). |
 | 3 | No existe forma de distinguir ALUMNO/PROFESOR ni de verificar la clasificación. | Migración 001 (columnas nuevas, propuestas). |
 | 4 | No hay dónde persistir intentos fallidos de login (limitarlos en la sesión es evadible). | Migración 002 (tabla `intento_acceso`). |
@@ -109,6 +109,7 @@ modelos ni conexiones duplicados.
 ## Etapa 3. Base de datos
 
 Orden de instalación: `schema.sql` → `001-clasificacion-usuario.sql` → `002-intento-acceso.sql` → `usuario-aplicacion.sql`.
+En el servidor, `equipo_7` ya tenía el esquema 1.2: solo se aplicaron las dos migraciones (Etapa 5, paso 3).
 
 ### Migración 001 — clasificación institucional y versión de sesión
 | Columna | Tipo | Por qué |
@@ -125,14 +126,19 @@ Guarda **huellas HMAC-SHA256** del correo y de la IP (nunca el dato en claro), c
 lo que evita enumerar cuentas. Se purgan registros con más de un día.
 
 ### Respaldo y reversión
-```powershell
-C:\xampp\mysql\bin\mysqldump.exe -u root -p papc_db > respaldo_papc_db_AAAAMMDD.sql
+Comandos para la Shell de XAMPP, desde `C:\xampp\htdocs\papc` (servidor: base `equipo_7`, puerto 3307):
+```cmd
+C:\xampp\mysql\bin\mysqldump.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p --single-transaction equipo_7 > "%USERPROFILE%\Documents\respaldo_equipo_7.sql"
 ```
-```powershell
-Get-Content database\migraciones\002-intento-acceso-revertir.sql | C:\xampp\mysql\bin\mysql.exe -u root -p papc_db
+```cmd
+C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 -e "source database/migraciones/002-intento-acceso-revertir.sql"
 ```
-```powershell
-Get-Content database\migraciones\001-clasificacion-usuario-revertir.sql | C:\xampp\mysql\bin\mysql.exe -u root -p papc_db
+```cmd
+C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 -e "source database/migraciones/001-clasificacion-usuario-revertir.sql"
+```
+Para restaurar el respaldo completo:
+```cmd
+C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 < "%USERPROFILE%\Documents\respaldo_equipo_7.sql"
 ```
 Revertir 001 **borra** la clasificación de todas las cuentas; el módulo deja de funcionar hasta volver a migrar.
 Aplicación y reversión de ambas migraciones fueron verificadas en MariaDB 11.5.2 (ver Etapa 6).
@@ -171,96 +177,162 @@ duración máxima (8 h) → relee la cuenta de MariaDB → compara `version_sesi
 
 ---
 
-## Etapa 5. Instalación en el servidor XAMPP (`http://IP-DEL-SERVIDOR/papc/`)
+## Etapa 5. Instalación en el servidor XAMPP (`http://192.168.20.132/papc/`)
 
-Escenario: un solo XAMPP compartido por varios equipos; cada proyecto vive en `htdocs` y se abre como
-`http://192.168.20.132/<proyecto>/`. Colocar el código en `htdocs` no es lo ideal, pero se resuelve de forma
-segura con un **`Alias`**: la URL `/papc` entra **solo** a `public/`; el resto del proyecto queda denegado
-aunque esté dentro de `htdocs`.
+Escenario real: un XAMPP compartido por 9 equipos; cada proyecto vive en `htdocs` y se abre como
+`http://192.168.20.132/<proyecto>/`. Apache usa los puertos 80 y 443, y MySQL/MariaDB el **3307**. La
+institución asignó la base **`equipo_7`** y la cuenta **`usuario_equipo_7`**, sin acceso a `root`.
+
+Colocar el código en `htdocs` no es lo ideal, pero se resuelve de forma segura con un **`Alias`**: la URL
+`/papc` entra **solo** a `public/`; el resto del proyecto queda denegado aunque esté dentro de `htdocs`.
 
 ```
 C:\xampp\htdocs\papc\           ← carpeta del proyecto (denegada por Apache)
-├── public\                     ← lo único que se sirve como http://IP/papc/
+├── public\                     ← lo único que se sirve como http://192.168.20.132/papc/
 ├── app\  config\  database\  storage\  tests\  herramientas\   (privados)
 └── .env                        ← se crea en el servidor; nunca se copia por chat o correo
 ```
 
-1. **Copiar el proyecto** a `C:\xampp\htdocs\papc` (descomprime el zip de modo que exista
-   `C:\xampp\htdocs\papc\public\index.php`).
+Todos los comandos son para la ventana **Shell** del panel de XAMPP (botón *Shell*) o el **Símbolo del
+sistema** (`cmd`); los comandos de PowerShell no funcionan ahí. Al abrir una ventana nueva, entra
+primero a la carpeta del proyecto:
+```cmd
+cd /d C:\xampp\htdocs\papc
+```
 
-2. **Configurar Apache** (una sola vez):
-   - Copia `docs\xampp\papc.conf` a `C:\xampp\apache\conf\extra\papc.conf`.
-   - Al **final** de `C:\xampp\apache\conf\httpd.conf` agrega la línea `Include conf/extra/papc.conf`.
-   - En el mismo `httpd.conf` confirma que la línea `LoadModule rewrite_module modules/mod_rewrite.so` **no** empiece con `#`.
-   - Reinicia Apache desde el panel de XAMPP. Si no arranca, revisa `C:\xampp\apache\logs\error.log`.
+### 1. Copiar el proyecto
+Descomprime `papc.zip` en `C:\xampp\htdocs\` de modo que exista `C:\xampp\htdocs\papc\public\index.php`
+(y **no** `htdocs\papc\papc\public\...`, que es lo que deja a veces "Extraer todo" de Windows).
 
-   El `papc.conf` contiene:
-   ```apache
-   Alias /papc "C:/xampp/htdocs/papc/public"
-   <Directory "C:/xampp/htdocs/papc">
-       Require all denied
-       AllowOverride None
-       Options None
-   </Directory>
-   <Directory "C:/xampp/htdocs/papc/public">
-       Options SymLinksIfOwnerMatch
-       AllowOverride All
-       Require all granted
-   </Directory>
-   ```
-   `Options SymLinksIfOwnerMatch` es obligatorio: sin él Apache prohíbe `mod_rewrite` en `.htaccess` y
-   **todas** las páginas responden 403 (fallo encontrado y corregido al probar en Apache real).
+### 2. Activar el `Alias` en Apache (una sola vez)
+```cmd
+copy C:\xampp\apache\conf\httpd.conf C:\xampp\apache\conf\httpd.conf.respaldo
+```
+```cmd
+copy C:\xampp\htdocs\papc\docs\xampp\papc.conf C:\xampp\apache\conf\extra\papc.conf
+```
+```cmd
+(echo.& echo Include conf/extra/papc.conf)>> C:\xampp\apache\conf\httpd.conf
+```
+```cmd
+C:\xampp\apache\bin\httpd.exe -t
+```
+Debe responder `Syntax OK`; después reinicia Apache en el panel (*Stop* y *Start*). Si hubo error,
+restaura `httpd.conf.respaldo` y no reinicies. Confirma también que `LoadModule rewrite_module` no tenga `#`:
+```cmd
+findstr /i /c:"papc.conf" /c:"rewrite_module" C:\xampp\apache\conf\httpd.conf
+```
 
-3. **Comprobar Argon2id** en el PHP de XAMPP (si devuelve `false`, se usa bcrypt costo 12 y la contraseña se limita a 72 bytes):
-   ```powershell
-   C:\xampp\php\php.exe -r "var_dump(defined('PASSWORD_ARGON2ID'));"
-   ```
+El `papc.conf` contiene:
+```apache
+Alias /papc "C:/xampp/htdocs/papc/public"
+<Directory "C:/xampp/htdocs/papc">
+    Require all denied
+    AllowOverride None
+    Options None
+</Directory>
+<Directory "C:/xampp/htdocs/papc/public">
+    Options SymLinksIfOwnerMatch
+    AllowOverride All
+    Require all granted
+</Directory>
+```
+`Options SymLinksIfOwnerMatch` es obligatorio: sin él Apache prohíbe `mod_rewrite` en `.htaccess` y todas las
+páginas responden 403 (fallo encontrado y corregido al probar en Apache real).
 
-4. **Crear la base** (desde `C:\xampp\htdocs\papc`). Si root de XAMPP no tiene contraseña, presiona Enter cuando la pida:
-   ```powershell
-   C:\xampp\mysql\bin\mysql.exe -u root -p --default-character-set=utf8mb4 -e "CREATE DATABASE papc_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; USE papc_db; source database/schema.sql; source database/migraciones/001-clasificacion-usuario.sql; source database/migraciones/002-intento-acceso.sql;"
-   ```
+### 3. Migrar la base `equipo_7`
+En el servidor la base **ya tenía las tablas del esquema 1.2**, así que **no** se ejecuta `schema.sql`; solo
+las dos migraciones. Todos los comandos llevan `-h 127.0.0.1 -P 3307 --protocol=TCP` para no conectarse por
+error a otro MySQL en el 3306. Piden la contraseña de `usuario_equipo_7`.
 
-5. **Cuenta MariaDB de la aplicación** (mínimos privilegios). Genera una contraseña:
-   ```powershell
-   C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(24));"
-   ```
-   Copia `database\usuario-aplicacion.sql` a `C:\xampp\tmp\papc-usuario.sql`, reemplaza en la copia
-   `CAMBIAR_POR_CONTRASENA_LARGA_Y_ALEATORIA` por la contraseña generada, ejecútala y **borra la copia**:
-   ```powershell
-   C:\xampp\mysql\bin\mysql.exe -u root -p -e "source C:/xampp/tmp/papc-usuario.sql"
-   ```
+Respaldo previo (fuera de `htdocs`):
+```cmd
+C:\xampp\mysql\bin\mysqldump.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p --single-transaction --default-character-set=utf8mb4 equipo_7 > "%USERPROFILE%\Documents\respaldo_equipo_7.sql"
+```
+Migraciones:
+```cmd
+C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p --default-character-set=utf8mb4 equipo_7 -e "source database/migraciones/001-clasificacion-usuario.sql"
+```
+```cmd
+C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p --default-character-set=utf8mb4 equipo_7 -e "source database/migraciones/002-intento-acceso.sql"
+```
+`Duplicate column name` o `already exists` significan que esa migración ya estaba aplicada; `ALTER/CREATE
+command denied` significa que la cuenta no tiene ese permiso y debe aplicarla el profesor. Verificación:
+```cmd
+C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 -e "SELECT @@port; DESCRIBE usuario; SHOW TABLES;"
+```
+Debe mostrar `3307`, las 9 columnas de `usuario` (las 6 originales más `tipo_integrante_usuario`,
+`estado_verificacion_usuario` y `version_sesion_usuario`) y la tabla `intento_acceso`.
 
-6. **Crear el `.env`** en `C:\xampp\htdocs\papc` a partir de `.env.example`:
-   `APP_RUTA_BASE=/papc` (ya viene así), `DB_CONTRASENA=` la del paso 5 y una `CLAVE_HUELLAS` nueva:
-   ```powershell
-   C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(32));"
-   ```
+> **Instalación desde cero** (base vacía con `root`, por ejemplo en la computadora de un integrante):
+> crea la base y ejecuta además `source database/schema.sql;` antes de las migraciones, y opcionalmente
+> `database/usuario-aplicacion.sql` para una cuenta de mínimos privilegios.
 
-7. **Permitir el acceso desde la red**. En el servidor, en una PowerShell **como administrador**:
-   ```powershell
-   New-NetFirewallRule -DisplayName "Apache XAMPP (HTTP 80)" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow -Profile Private,Domain
-   ```
+### 4. Crear el `.env`
+Genera la clave de huellas:
+```cmd
+C:\xampp\php\php.exe -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
+```
+```cmd
+copy .env.example .env
+```
+```cmd
+notepad .env
+```
+`.env.example` ya trae los valores del servidor; solo completa `DB_CONTRASENA` y `CLAVE_HUELLAS`:
+```
+APP_ENTORNO=desarrollo
+APP_RUTA_BASE=/papc
+DB_SERVIDOR=127.0.0.1
+DB_PUERTO=3307
+DB_NOMBRE=equipo_7
+DB_USUARIO=usuario_equipo_7
+DB_CONTRASENA=la_contraseña_de_usuario_equipo_7
+CLAVE_HUELLAS=la_clave_generada
+```
+Revisa los valores sin mostrar la contraseña:
+```cmd
+findstr /b "DB_SERVIDOR DB_PUERTO DB_NOMBRE DB_USUARIO APP_RUTA_BASE" .env
+```
 
-8. **Verificar desde otra computadora** de la red. `http://192.168.20.132/papc/` debe mostrar el inicio de
-   sesión, y estas rutas deben responder **403 o 404** (nunca 200):
-   ```powershell
-   foreach ($r in '/papc/.env','/papc/.git/config','/papc/config/database.php','/papc/database/schema.sql','/papc/storage/logs/','/papc/tests/ejecutar-pruebas.php','/PAPC/.env','/papc/css/') { curl.exe -s -o NUL -w "$r -> %{http_code}`n" "http://192.168.20.132$r" }
-   ```
-   Si alguna da 200, **detén el servidor** y revisa los pasos 2 y 6 antes de continuar.
+### 5. Permitir el acceso desde la red
+El puerto 80 debe estar permitido en el Firewall de Windows del servidor (y el 443 si se usa HTTPS). En el
+laboratorio ya lo estaba.
 
-9. **Primer administrador principal** (no hay cuentas ni contraseñas predeterminadas): regístrate en
-   `http://192.168.20.132/papc/registro` con tu propia contraseña y, en la consola del servidor:
-   ```powershell
-   C:\xampp\php\php.exe C:\xampp\htdocs\papc\herramientas\inicializar-administrador-principal.php tu.correo@dominio.mx
-   ```
-   Solo funciona si aún no hay ningún principal; queda auditado como `INICIALIZACION_ADMINISTRADOR_PRINCIPAL`.
-   Después, todo cambio de rol se hace en `/papc/admin/usuarios` con re-autenticación.
+### 6. Probar desde otra computadora
+`http://192.168.20.132/papc/` debe redirigir a `/papc/iniciar-sesion` y mostrar el formulario.
+Verifica que los archivos privados respondan **403 o 404** (nunca 200):
+```cmd
+for %r in (/papc/.env /papc/.git/config /papc/config/database.php /papc/database/schema.sql /papc/storage/logs/ /PAPC/.env /papc/css/) do @curl -s -o NUL -w "%r -> %{http_code}\n" http://192.168.20.132%r
+```
+
+### 7. Primer administrador principal
+No hay cuentas ni contraseñas predeterminadas. Regístrate en `http://192.168.20.132/papc/registro` con tu
+propia contraseña (mínimo 15 caracteres) y luego, en la Shell del servidor:
+```cmd
+C:\xampp\php\php.exe herramientas\inicializar-administrador-principal.php tu.correo@dominio.mx
+```
+Solo funciona si aún no hay ningún principal; queda auditado como `INICIALIZACION_ADMINISTRADOR_PRINCIPAL`.
+Tu sesión abierta se cerrará (el rol cambió); al volver a entrar aparece "Administrar cuentas".
+
+Al terminar, cierra la Shell para que las contraseñas no queden en el historial.
+
+### Solución de problemas (casos reales de la instalación)
+| Síntoma | Causa | Solución |
+|---|---|---|
+| Página "Forbidden" de Apache en `/papc/`; en `error.log`: `client denied ... C:/xampp/htdocs/papc/` | El `Alias` no está activo y el `.htaccess` de respaldo bloquea la raíz | Paso 2 completo y reiniciar Apache |
+| "Error 500 · Ocurrió un error interno" con el diseño de PAPC | El `Alias` ya funciona; falla la configuración o la base | `type storage\logs\app.log` |
+| `app.log`: `Falta la variable de configuración obligatoria DB_NOMBRE` | No existe `.env` o está incompleto | Paso 4 |
+| `app.log`: `Access denied for user '...'@'localhost'` | Usuario o contraseña del `.env` incorrectos (en el servidor: `usuario_equipo7` en lugar de `usuario_equipo_7`) | Corregir `DB_USUARIO`/`DB_CONTRASENA`; probar antes con `mysql.exe ... -u usuario_equipo_7 -p -e "SELECT CURRENT_USER();"` |
+| `app.log`: `Unknown column 'tipo_integrante_usuario'` | Faltan las migraciones | Paso 3 |
+| Navegador: `ERR_NETWORK_CHANGED` | Cambió la red de la computadora **cliente** (Wi-Fi, VPN, adaptadores de Docker/Hyper-V) | Volver a abrir la dirección (no recargar el formulario); si la cuenta ya se creó, iniciar sesión |
+| Caracteres como `Excepci├│n` en la consola | La consola no está en UTF-8 | `chcp 65001` antes de `type` |
 
 ### Red de seguridad si alguien olvida el `Alias`
 Si el proyecto se copia a `htdocs` sin el paso 2, el `.htaccess` de la raíz deniega todo (`.env`, `.git`,
 `config/`…) y solo `public/` responde, en `http://IP/papc/public/` (con `APP_RUTA_BASE=/papc/public`).
-Esto también se verificó en Apache real, pero **no** sustituye al paso 2.
+Esto se verificó en Apache real y también ocurrió en el servidor (la página "Forbidden"), pero **no**
+sustituye al paso 2.
 
 ### Alternativa: VirtualHost propio
 Si algún día el proyecto tiene su propio dominio, basta un VirtualHost con `DocumentRoot` hacia
@@ -271,10 +343,12 @@ Si algún día el proyecto tiene su propio dominio, basta un VirtualHost con `Do
   proyectos de los otros equipos.
 - **Sesiones propias**: se guardan en `storage/sesiones/` y no en `C:\xampp\tmp`, donde el recolector de
   basura de otra aplicación podría borrarlas antes de tiempo.
+- **Privilegios de la base**: la aplicación usa `usuario_equipo_7`, que tiene todos los permisos sobre
+  `equipo_7`. Por eso, en el servidor, la bitácora `auditoria` **no** es de solo anexado; para lograrlo, el
+  profesor tendría que crear la cuenta de `database/usuario-aplicacion.sql`.
 - **Límite que no puede resolverse por código**: todos los proyectos se ejecutan dentro del mismo proceso de
-  Apache, así que el PHP de otro equipo **podría leer** tu `.env` o tus sesiones en disco. Por eso la cuenta
-  `papc_app` tiene mínimos privilegios y sus contraseñas no deben reutilizarse en ningún otro lugar. Para
-  aislar de verdad haría falta un servidor (o máquina virtual) por proyecto.
+  Apache, así que el PHP de otro equipo **podría leer** tu `.env` o tus sesiones en disco. No reutilices esas
+  contraseñas en ningún otro lugar. Para aislar de verdad haría falta un servidor (o máquina virtual) por proyecto.
 
 ### Desarrollo local vs. producción
 | Aspecto | Desarrollo (`APP_ENTORNO=desarrollo`) | Producción (`APP_ENTORNO=produccion`) |
@@ -284,18 +358,24 @@ Si algún día el proyecto tiene su propio dominio, basta un VirtualHost con `Do
 | HSTS | No | `Strict-Transport-Security` de 1 año |
 | Errores | Ocultos al usuario; en `storage/logs/` | Igual; además `display_errors=Off` en `php.ini` |
 
-En producción la cookie `Secure` no se envía por HTTP, de modo que el login **no funciona sin HTTPS**: es intencional.
+Aunque `APP_ENTORNO=desarrollo`, si se entra por `https://192.168.20.132/papc/` la cookie se marca `Secure`
+automáticamente. En producción la cookie `Secure` no se envía por HTTP, de modo que el login **no funciona
+sin HTTPS**: es intencional.
 
 ---
 
 ## Etapa 6. Pruebas
 
 ### Cómo ejecutarlas
-```powershell
+Desde la carpeta del proyecto, en `cmd`. Las unitarias no necesitan base de datos:
+```cmd
 C:\xampp\php\php.exe tests\ejecutar-pruebas.php unitarias
 ```
-```powershell
-$env:PAPC_PRUEBAS_DB_USUARIO='root'; $env:PAPC_PRUEBAS_DB_CONTRASENA=''; C:\xampp\php\php.exe tests\ejecutar-pruebas.php todas
+Integración y HTTP necesitan un MariaDB **propio** con una cuenta que pueda crear bases (por ejemplo, el
+`root` de un XAMPP local). **No** se pueden ejecutar en el servidor del laboratorio: `usuario_equipo_7` no
+puede crear `papc_db_pruebas`.
+```cmd
+set PAPC_PRUEBAS_DB_USUARIO=root& set PAPC_PRUEBAS_DB_CONTRASENA=& set PAPC_PRUEBAS_DB_PUERTO=3306& C:\xampp\php\php.exe tests\ejecutar-pruebas.php todas
 ```
 Las suites de integración y HTTP **crean y borran** la base `papc_db_pruebas` y una cuenta temporal
 `papc_app_pruebas@127.0.0.1` (se elimina al terminar). Se niegan a operar sobre cualquier base que no termine
@@ -316,8 +396,13 @@ salvo la ruta, y la base instalada siguiendo la Etapa 5:
 | A03 | 24 rutas privadas con Alias (incl. `/PAPC/.env`, `/papc/%2e%2e/.env`, `/papc./.env`, `.git`, `storage/sesiones`) → 403/404 sin contenido | Pasa |
 | A04 | Sin Alias: `.htaccess` de la raíz deniega 9 rutas privadas; `public/` sigue funcionando | Pasa |
 
-Este script de humo se ejecutó desde fuera del repositorio; no se ha probado aún desde **otra computadora**
-por la red, ni en el XAMPP del servidor (paso 8 de la Etapa 5).
+Este script de humo se ejecutó desde fuera del repositorio.
+
+**En el XAMPP del servidor (19/11/2026, observado por el equipo):** tras activar el `Alias`, crear el `.env` y
+corregir el usuario de la base, `http://192.168.20.132/papc/` cargó el formulario de inicio de sesión desde
+otra computadora de la red. Antes de activar el `Alias`, el `.htaccess` de respaldo devolvió 403 en `/papc/`,
+como se esperaba. Quedan pendientes de confirmar en el servidor: registro, inicio de sesión, inicialización
+del principal y la verificación de archivos privados (Etapa 5, pasos 6 y 7).
 
 ### Correspondencia con las 17 pruebas solicitadas
 | # | Prueba solicitada | IDs | Entrada principal | Resultado esperado | Observado |
@@ -378,7 +463,7 @@ fuera de camelCase, ninguna clase CSS fuera de kebab-case.
 
 | Regla | Ejemplo real | Archivo |
 |---|---|---|
-| NOM-01 BD minúsculas snake_case | `papc_db`, `papc_db_pruebas` | `.env.example`, `tests/BaseDatosPruebas.php` |
+| NOM-01 BD minúsculas snake_case | `equipo_7` (servidor), `papc_db_pruebas` | `.env.example`, `tests/BaseDatosPruebas.php` |
 | NOM-02 Tablas en singular | `usuario`, `auditoria`, `intento_acceso` | `database/migraciones/002-intento-acceso.sql` |
 | NOM-03 PK `id_<entidad>` | `id_intento_acceso` | migración 002 |
 | NOM-04 FK descriptiva | Ninguna FK nueva (decisión justificada); existentes intactas: `id_usuario_actor` | `schema.sql` |
@@ -442,7 +527,9 @@ implementados y probados en el alcance indicado.
 7. **Suspensión de cuentas** por administradores: no implementada.
 8. **Concurrencia**: `session_regenerate_id(true)` periódico puede cerrar solicitudes simultáneas de una misma pestaña en casos raros.
 9. **Proxy inverso**: el origen se toma de `REMOTE_ADDR`; si se usa un proxy, ajustar `Solicitud::obtenerOrigen()`.
-10. Pendiente de ejecutar en el XAMPP del servidor: Etapa 5 paso 8 y las pruebas BD-01 a BD-06 de la Fase I sobre `papc_db`.
+10. Pendiente de completar en el XAMPP del servidor: registro, login, principal y archivos privados (Etapa 5, pasos 6 y 7), y las pruebas BD-01 a BD-06 de la Fase I sobre `equipo_7`.
 11. **XAMPP compartido**: el código de otros proyectos del mismo Apache puede leer los archivos de PAPC
-    (`.env`, sesiones). Solo se mitiga con mínimos privilegios y contraseñas no reutilizadas; aislarlo requiere otro servidor.
+    (`.env`, sesiones). Solo se mitiga con contraseñas no reutilizadas; aislarlo requiere otro servidor. Además, en el
+    servidor la aplicación usa `usuario_equipo_7` (todos los permisos sobre `equipo_7`), así que el mínimo privilegio
+    de `usuario-aplicacion.sql` y la prueba P22 solo aplican si el profesor crea esa cuenta.
 12. **HTTP en la red del laboratorio**: sin HTTPS, contraseñas y cookies viajan sin cifrar entre las computadoras.

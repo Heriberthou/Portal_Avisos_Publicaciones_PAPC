@@ -2,7 +2,7 @@
 -- MariaDB / MySQL (InnoDB). Ejecutar únicamente en entorno autorizado y vacío.
 -- No incluye cuentas, contraseñas ni registros de prueba.
 -- CREATE TABLE IF NOT EXISTS se evita para NO ocultar diferencias de estructura.
--- USE equipo_7;  -- Comentado en el repositorio: la base se elige al importar (ver README, papc_db).
+-- USE equipo_7;  -- Comentado en el repositorio: la base se elige al importar (en el servidor: equipo_7, ver README).
 
 CREATE TABLE usuario (
   id_usuario INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

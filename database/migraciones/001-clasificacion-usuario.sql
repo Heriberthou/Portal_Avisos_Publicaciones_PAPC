@@ -33,7 +33,7 @@
 --   * ALTER TABLE reconstruye la tabla: ejecutar en ventana de mantenimiento.
 --
 -- RESPALDO PREVIO (obligatorio si hay datos):
---   mysqldump -u root -p papc_db usuario > respaldo_usuario_AAAAMMDD.sql
+--   C:\xampp\mysql\bin\mysqldump.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 usuario > respaldo_usuario_AAAAMMDD.sql
 -- REVERSIÓN:
 --   database/migraciones/001-clasificacion-usuario-revertir.sql
 -- =====================================================================
