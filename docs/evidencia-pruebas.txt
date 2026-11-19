@@ -1,0 +1,47 @@
+[PASA] U01     Validación acepta un registro correcto y normaliza el correo
+[PASA] U06     Nombre atómico: materno opcional y nombre completo de máximo 100
+[PASA] P04     Rechazo de campos inválidos en el registro
+[PASA] U02     Detección de parámetros inesperados y campos protegidos
+[PASA] P05a    Hash con Argon2id, salado y verificable (sin texto claro)
+[PASA] P13a    Token CSRF: aleatorio, por sesión y comparado de forma estricta
+[PASA] P14a    Escape de salida HTML contra XSS
+[PASA] U03     Prevención de redirección abierta
+[PASA] U05     Publicación en subcarpeta /papc: rutas, enlaces y cookie limitada
+[PASA] U04     Matriz RBAC: denegación por defecto y separación de roles
+[PASA] P01     Registro correcto de un alumno
+[PASA] P02     Registro de profesor: PENDIENTE y sin permisos adicionales
+[PASA] P03     Rechazo de correos duplicados (incluso con mayúsculas)
+[PASA] P05b    Contraseña almacenada como hash Argon2id en la BD
+[PASA] P24     Nombre atómico en la BD: columna calculada, materno NULL y CHECK de 100
+[PASA] P06     Inicio de sesión válido regenera el identificador de sesión
+[PASA] P07     Credenciales incorrectas: respuesta idéntica exista o no el correo
+[PASA] P08a    Cerrar sesión elimina la sesión del servidor
+[PASA] P20     Expiración por inactividad y por duración máxima
+[PASA] P14b    Inyección SQL: los datos se tratan como datos
+[PASA] P15     Limitación de intentos por cuenta y por origen, sin bloqueo permanente
+[PASA] P19     Inicialización controlada del administrador principal (una sola vez)
+[PASA] P12a    Un ADMINISTRADOR común no puede cambiar roles (servicio)
+[PASA] P18     El principal cambia roles solo con re-autenticación y nunca el propio
+[PASA] P17a    Revocar privilegios invalida la sesión abierta del afectado
+[PASA] P23     Verificación de profesor: solo administradores, sin cambiar el rol
+[PASA] P09a    Enrutador: rutas protegidas sin sesión responden 401
+[PASA] P11a    Enrutador: un USUARIO no accede a operaciones administrativas
+[PASA] P10a    Enrutador: registro con rol_usuario manipulado se rechaza y audita
+[PASA] P22     Mínimo privilegio: la cuenta de la aplicación no altera la auditoría ni la estructura
+[PASA] H00     El servidor de pruebas responde
+[PASA] H01     Registro por formulario: alumno y profesor reciben rol USUARIO
+[PASA] H02     Herramienta de consola inicializa al principal una sola vez y no es accesible por web
+[PASA] P06b    Inicio de sesión válido por HTTP y cookie de sesión segura
+[PASA] P07b    Credenciales incorrectas por HTTP: mismo código y mensaje
+[PASA] P09b    Rutas protegidas sin sesión: redirección al login o 401
+[PASA] P13b    CSRF: POST sin token o con token ajeno se rechaza
+[PASA] P08b    Cerrar sesión invalida la cookie anterior aunque se reutilice
+[PASA] P10b    Registro con campos internos manipulados: 400, sin cuenta y auditado
+[PASA] P11b    Un USUARIO no accede a operaciones administrativas por HTTP
+[PASA] P12b    Un ADMINISTRADOR común no puede cambiar roles por HTTP (403 + auditoría)
+[PASA] P17b    Revocar ADMINISTRADOR cierra la sesión abierta y retira el acceso
+[PASA] P14c    XSS reflejado e inyección SQL por formulario
+[PASA] P16     Archivos privados no accesibles por HTTP directo
+[PASA] P15b    Intentos repetidos por HTTP: 429 aun con la contraseña correcta
+
+Total: 45 | Pasan: 45 | Fallan: 0
