@@ -39,8 +39,8 @@ final class BuzonPruebas
     public function mensajesPara(string $correo): array
     {
         $archivos = glob($this->directorio . '/*.txt') ?: [];
-        // Orden por fecha de modificación y nombre (varios mensajes por segundo).
-        usort($archivos, static fn (string $a, string $b): int => [filemtime($a), $a] <=> [filemtime($b), $b]);
+        // El nombre empieza con fecha y microsegundos: el orden alfabético es cronológico.
+        sort($archivos);
         $mensajes = [];
         foreach ($archivos as $archivo) {
             $contenido = (string) file_get_contents($archivo);

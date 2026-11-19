@@ -1,51 +1,78 @@
-[PASA] U01     Validación acepta un registro correcto y normaliza el correo
+PAPC | Evidencia de pruebas automáticas
+Fecha: 2026-11-19 | Rama: feature/diseno | Especificación 1.3
+Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 en 127.0.0.1:3399 (base desechable papc_db_pruebas), servidor embebido php -S.
+Comando: php tests/ejecutar-pruebas.php todas
+
+[PASA] U01     Solicitud de acceso: datos válidos se normalizan y no llevan contraseña ni rol
 [PASA] U06     Nombre atómico: materno opcional y nombre completo de máximo 100
-[PASA] P04     Rechazo de campos inválidos en el registro
-[PASA] U02     Detección de parámetros inesperados y campos protegidos
+[PASA] P04     Solicitud: rechazo de campos inválidos (incluido tipo ADMINISTRADOR)
+[PASA] U02     AC-02: campos internos enviados desde el navegador se detectan como manipulación
 [PASA] P05a    Hash con Argon2id, salado y verificable (sin texto claro)
 [PASA] P13a    Token CSRF: aleatorio, por sesión y comparado de forma estricta
 [PASA] P14a    Escape de salida HTML contra XSS
-[PASA] U03     Prevención de redirección abierta
+[PASA] U03     Prevención de redirección abierta (con consulta interna permitida)
 [PASA] U05     Publicación en subcarpeta /papc: rutas, enlaces y cookie limitada
-[PASA] U04     Matriz RBAC: denegación por defecto y separación de roles
-[PASA] U07     Lista de bloqueo: rechaza contraseñas comunes y predecibles, acepta frases
+[PASA] U04     Matriz RBAC 1.3: denegación por defecto y separación de roles
+[PASA] U07     AC-10/AC-11: lista de bloqueo rechaza contraseñas comunes de 15+ y acepta frases
+[PASA] U15     La contraseña no puede contener el nombre, el correo ni la matrícula de la cuenta
 [PASA] U08     Login: indica qué campo falta y conserva el correo escrito
 [PASA] U09     Inactividad configurable en .env solo entre 60 s y 30 min
 [PASA] U10     Laboratorio E8: la consulta concatenada se altera y la preparada no
-[PASA] P01     Registro correcto de un alumno
-[PASA] P02     Registro de profesor: PENDIENTE y sin permisos adicionales
-[PASA] P03     Rechazo de correos duplicados (incluso con mayúsculas)
-[PASA] P05b    Contraseña almacenada como hash Argon2id en la BD
-[PASA] P24     Nombre atómico en la BD: columna calculada, materno NULL y CHECK de 100
-[PASA] P06     Inicio de sesión válido regenera el identificador de sesión
-[PASA] P07     Credenciales incorrectas: respuesta idéntica exista o no el correo
+[PASA] U11     Tokens de enlace: 256 bits, base64url, solo se guarda su SHA-256
+[PASA] U12     TOTP: vectores oficiales RFC 6238, tolerancia de ±30 s y sin reutilizar códigos
+[PASA] U13     Secreto del segundo factor cifrado (AES-256-GCM) y ligado a la cuenta
+[PASA] U14     Correo: enlaces solo con APP_URL_PUBLICA válida (nunca con el encabezado Host)
+[PASA] P19     AC-27: el primer principal se crea solo por consola, sin contraseña predeterminada y una sola vez
+[PASA] P30a    AC-09/AC-10: activación rechaza contraseñas comunes, usa el enlace una sola vez y no abre sesión
+[PASA] P26a    AC-14: la contraseña correcta de un administrador sin segundo factor no abre sesión
+[PASA] P01     AC-01/RF-02: la solicitud queda PENDIENTE sin crear cuenta ni contraseña y envía un enlace de verificación
+[PASA] P02     AC-03: sin verificar el correo la solicitud no aparece en la bandeja ni puede aprobarse
+[PASA] P03     AC-04: una solicitud repetida no crea otra solicitud ni deja dos enlaces vigentes
+[PASA] P25     RF-03: el enlace de verificación sirve una vez, vence y puede reenviarse
+[PASA] P27     AC-06/RF-04/RF-05: aprobar crea cuenta INVITADA (rol USUARIO), registra revisor, fecha y método, y envía invitación
+[PASA] P29     AC-12: una cuenta INVITADA no inicia sesión y recibe la respuesta neutral
+[PASA] P30b    AC-08: un enlace de activación vencido no activa; reenviar la invitación invalida el anterior
+[PASA] P31     AC-13: una cuenta ACTIVA inicia sesión con ID nuevo y solo permisos de USUARIO
+[PASA] P07     SEG-06: credenciales incorrectas responden igual exista o no el correo
+[PASA] P28     AC-07: rechazar exige motivo, no crea cuenta y una nueva solicitud no lo revierte en silencio
+[PASA] P18     El principal asigna roles con re-autenticación, nunca el propio y solo a cuentas ACTIVAS
+[PASA] P12a    Un ADMINISTRADOR no puede cambiar roles ni restablecer segundos factores (servicio)
+[PASA] P34     Un administrador no resuelve una solicitud asociada a su propia identidad
+[PASA] P26b    SEG-08: el segundo factor no acepta códigos reutilizados y los códigos de recuperación sirven una vez
+[PASA] P35     Sin segundo factor no hay sesión administrativa aunque se fuerce la sesión (defensa en profundidad)
+[PASA] P11a    AC-05/AC-15: un USUARIO recibe 403 en la bandeja y al aprobar; la solicitud no cambia
+[PASA] P37     Un ADMINISTRADOR (con segundo factor) revisa solicitudes pero no abre la sección del principal
+[PASA] P33     AC-16/RF-08: suspender revoca la sesión abierta; la cuenta no entra ni se recupera hasta reactivarse
+[PASA] P36     La BAJA es definitiva y una invitación pendiente puede cancelarse
+[PASA] P32     AC-17/AC-18/RF-07: recuperación neutral, enlace de un uso que vence y revoca las sesiones
+[PASA] P38     INVITADA que perdió su enlace: "¿Olvidó su contraseña?" le envía una activación nueva
 [PASA] P08a    Cerrar sesión elimina la sesión del servidor
-[PASA] P20     Expiración por inactividad y por duración máxima
-[PASA] P14b    Inyección SQL: los datos se tratan como datos
-[PASA] P15     Limitación de intentos por cuenta y por origen, sin bloqueo permanente
-[PASA] P19     Inicialización controlada del administrador principal (una sola vez)
-[PASA] P12a    Un ADMINISTRADOR común no puede cambiar roles (servicio)
-[PASA] P18     El principal cambia roles solo con re-autenticación y nunca el propio
-[PASA] P17a    Revocar privilegios invalida la sesión abierta del afectado
-[PASA] P23     Verificación de profesor: solo administradores, sin cambiar el rol
-[PASA] P09a    Enrutador: rutas protegidas sin sesión responden 401
-[PASA] P11a    Enrutador: un USUARIO no accede a operaciones administrativas
-[PASA] P10a    Enrutador: registro con rol_usuario manipulado se rechaza y audita
-[PASA] P22     Mínimo privilegio: la cuenta de la aplicación no altera la auditoría ni la estructura
+[PASA] P20     SEG-10: expiración por inactividad y por duración máxima
+[PASA] P17a    Revocar un rol administrativo invalida la sesión abierta del afectado
+[PASA] P15     AC-21/SEG-07: límites por cuenta y por origen sin bloquear a todo el salón
+[PASA] P14b    AC-20: entradas con comillas o SQL se guardan como datos o se rechazan
+[PASA] P09a    Enrutador: rutas protegidas sin sesión responden 401; inexistentes 404; método 405
+[PASA] P10a    AC-02/SEG-01: una solicitud con rol o estado adulterados se rechaza (400), se audita y no se guarda
+[PASA] P23     Verificación de profesor (cuentas anteriores a la 004): solo administradores, sin cambiar el rol
+[PASA] P39     SEG-16: la bitácora reconstruye aprobaciones y cambios de rol sin contraseñas ni tokens
+[PASA] P22     Mínimo privilegio: la cuenta de la aplicación no altera la auditoría, no borra ni cambia la estructura
 [PASA] H00     El servidor de pruebas responde
-[PASA] H01     Registro por formulario: alumno y profesor reciben rol USUARIO
-[PASA] H02     Herramienta de consola inicializa al principal una sola vez y no es accesible por web
-[PASA] P06b    Inicio de sesión válido por HTTP y cookie de sesión segura
-[PASA] P07b    Credenciales incorrectas por HTTP: mismo código y mensaje
+[PASA] H01     AC-01: portada y "Solicitar acceso" públicas, sin contraseña, rol ni opciones administrativas
+[PASA] H02     AC-27: la consola crea al principal con enlace de activación, una sola vez, y no es accesible por web
+[PASA] H04     RF-05: activar por el enlace (URL limpia), rechazo de contraseña común y login separado
+[PASA] H05     AC-14: el principal sin segundo factor no entra a administración; lo configura y recibe sus códigos una vez
+[PASA] H03     RF-02/RF-03: solicitud con respuesta neutral, verificación con botón y enlace de un solo uso
+[PASA] H06     AC-06: el principal aprueba en la bandeja con confirmación y método registrado
+[PASA] P06b    AC-13: la persona activa su cuenta y entra; cookie segura y datos no sensibles en /inicio
+[PASA] P07b    SEG-06: credenciales incorrectas, cuenta inexistente o INVITADA: mismo código y mensaje
 [PASA] P09b    Rutas protegidas sin sesión: redirección al login o 401
-[PASA] P13b    CSRF: POST sin token o con token ajeno se rechaza
-[PASA] P08b    Cerrar sesión invalida la cookie anterior aunque se reutilice
-[PASA] P10b    Registro con campos internos manipulados: 400, sin cuenta y auditado
-[PASA] P11b    Un USUARIO no accede a operaciones administrativas por HTTP
-[PASA] P12b    Un ADMINISTRADOR común no puede cambiar roles por HTTP (403 + auditoría)
-[PASA] P17b    Revocar ADMINISTRADOR cierra la sesión abierta y retira el acceso
-[PASA] P14c    XSS reflejado e inyección SQL por formulario
-[PASA] P16     Archivos privados no accesibles por HTTP directo
-[PASA] P15b    Intentos repetidos por HTTP: 429 aun con la contraseña correcta
+[PASA] P13b    AC-19: POST sin token CSRF válido se rechaza y no cambia datos
+[PASA] P10b    AC-02: solicitud con rol y estado adulterados: 400, sin solicitud ni cuenta y auditada
+[PASA] P11b    AC-05/AC-15: un USUARIO recibe 403 en la bandeja, al aprobar y en la sección del principal
+[PASA] P08b    AC-22: cerrar sesión invalida la cookie anterior aunque se reutilice
+[PASA] H08     AC-17/RF-07: recuperar por HTTP responde igual; restablecer revoca las sesiones abiertas
+[PASA] P14c    AC-20: XSS reflejado e inyección SQL por formulario
+[PASA] P16     AC-23: archivos privados, correos de prueba y herramientas no accesibles por HTTP
+[PASA] P15b    AC-21: intentos repetidos por HTTP: 429 aun con la contraseña correcta
 
-Total: 49 | Pasan: 49 | Fallan: 0
+Total: 71 | Pasan: 71 | Fallan: 0

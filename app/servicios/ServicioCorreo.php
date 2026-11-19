@@ -229,7 +229,8 @@ final class ServicioCorreo
             RegistroAplicacion::registrarError('El buzón de pruebas storage/correos no existe o no tiene permiso de escritura.');
             return false;
         }
-        $nombreArchivo = sprintf('%s-%s.txt', date('Ymd-His'), bin2hex(random_bytes(4)));
+        // Microsegundos en el nombre: los archivos se ordenan cronológicamente aunque lleguen en el mismo segundo.
+        $nombreArchivo = sprintf('%s-%s.txt', (new DateTimeImmutable())->format('Ymd-His-u'), bin2hex(random_bytes(4)));
         $contenido = "Para: {$destinatario}\nAsunto: {$asunto}\nFecha: " . date('c') . "\n"
             . "Modo: BUZÓN DE PRUEBAS (este mensaje NO se envió por correo)\n\n{$cuerpo}\n";
         return @file_put_contents($this->directorioBuzon . '/' . $nombreArchivo, $contenido, LOCK_EX) !== false;

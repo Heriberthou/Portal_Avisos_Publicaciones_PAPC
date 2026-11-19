@@ -1,11 +1,182 @@
 # PAPC · Módulo de autenticación y control de acceso
 
 Portal de Avisos y Publicaciones de la Comunidad (PAPC). Este repositorio contiene **solo** el módulo de
-registro, inicio/cierre de sesión, gestión de sesiones, RBAC y auditoría. Los módulos de avisos,
+solicitud de acceso, activación, inicio/cierre de sesión, recuperación, segundo factor para administradores, gestión de sesiones, RBAC y auditoría. Los módulos de avisos,
 comentarios, favoritos y propuestas **no** están implementados; únicamente se dejaron preparados los
 permisos (`config/permisos.php`) y el mecanismo (`RoleMiddleware::verificarPermiso()`) que usarán.
 
 Stack: PHP 8.2+ · MariaDB 10.4+ · Apache (XAMPP) · HTML/CSS · JavaScript propio solo para ayudas de validación · sin frameworks ni Composer.
+
+---
+
+## Especificación 1.3 · Solicitud de acceso, activación y segundo factor
+
+> Implementa el documento *Especificación funcional, de seguridad y usabilidad del módulo de autenticación
+> y solicitud de acceso del PAPC, versión 1.3*. **Es un cambio de requisitos frente a la Fase I 1.2**
+> ("Registrarse" pasa a "Solicitar acceso"); conviene confirmarlo con el docente si la consigna exige un
+> registro abierto. Las Etapas 1–7 de abajo describen la base de la Fase I; donde difieran, manda esta sección.
+
+**Criterio central:** nadie obtiene una cuenta activa por llenar un formulario público.
+
+```
+Visitante ─► Solicitar acceso (sin contraseña) ─► solicitud PENDIENTE
+          ─► abre el enlace del correo y pulsa "Confirmar mi correo" ─► correo verificado
+Administrador (con segundo factor) ─► coteja pertenencia ─► APRUEBA (método + confirmación) o RECHAZA (motivo)
+          └─ si aprueba: cuenta INVITADA, rol USUARIO, sin contraseña + enlace de activación
+Titular ─► abre el enlace ─► crea su contraseña (15+, lista de bloqueo) ─► cuenta ACTIVA ─► inicia sesión
+```
+
+### Tres conceptos separados (sección 3.1)
+
+| Concepto | Columna | Valores | ¿Qué responde? |
+|---|---|---|---|
+| Tipo de integrante | `tipo_integrante_usuario` | ALUMNO, PROFESOR | Relación con la universidad (no da permisos) |
+| Rol de seguridad | `rol_usuario` | USUARIO, ADMINISTRADOR, ADMINISTRADOR_PRINCIPAL | Qué puede hacer |
+| Estado de cuenta | `estado_cuenta_usuario` | INVITADA, ACTIVA, SUSPENDIDA, BAJA | Si puede usarse ahora |
+
+Transiciones: INVITADA→ACTIVA solo con el enlace; ACTIVA→SUSPENDIDA/BAJA; SUSPENDIDA→ACTIVA/BAJA;
+INVITADA→BAJA (cancelar invitación); BAJA es definitiva. Suspender o dar de baja cierra las sesiones.
+Un ADMINISTRADOR cambia el estado de cuentas USUARIO; solo el PRINCIPAL el de cuentas administrativas.
+
+### Qué se agregó
+
+| Pieza | Archivos |
+|---|---|
+| Migración 004 (y su reversión) | `database/migraciones/004-solicitud-acceso-activacion*.sql`: extensión de `usuario`, tablas `solicitud_acceso`, `token_solicitud`, `token_cuenta`, `codigo_recuperacion_mfa` |
+| Solicitud, verificación, bandeja | `SolicitudAccesoController`, `AdministracionSolicitudesController`, `ServicioSolicitudAcceso`, `SolicitudAccesoModel`, `TokenSolicitudModel` |
+| Activación y recuperación | `ActivacionController`, `RecuperacionController`, `ServicioCredenciales`, `TokenCuentaModel` |
+| Segundo factor TOTP (administradores) | `SegundoFactorController`, `ServicioSegundoFactor`, `SegundoFactorTotp`, `CifradorSecretos`, `CodigoRecuperacionMfaModel` |
+| Política de contraseñas nuevas | `PoliticaContrasenas` (usa `ListaBloqueoContrasenas` de la Fase II y además rechaza nombre, correo o matrícula) |
+| Correos sin servicio real | `ServicioCorreo` (modo `buzon_pruebas`: guarda los mensajes en `storage/correos/`; nunca finge un envío) |
+| Estados, roles, bitácora | `AdminUsuarioController` (`/admin/usuarios`, `/admin/roles` solo principal, `/admin/bitacora`) |
+| Pantallas A–I | `bienvenida`, `login`, `solicitar-acceso`, `solicitud-recibida`, `verificar-solicitud`, `solo-correo`, `nueva-contrasena`, `segundo-factor`, `configurar-segundo-factor`, `codigos-recuperacion`, `inicio`, `ayuda`, `aviso-privacidad`, `admin/*` |
+| Herramientas de consola | `inicializar-administrador-principal.php` (ahora también crea la cuenta), `ver-buzon-pruebas.php`, `restablecer-segundo-factor.php` |
+
+Correspondencia con los nombres sugeridos en la sección 9.2: las vistas siguen en `app/views/` (no en
+`app/views/autenticacion/`) para no romper el diseño existente; la sección exclusiva del principal (`/admin/roles`)
+y la bitácora viven en `AdminUsuarioController`. Se eliminó `registro.php`.
+
+### Rutas (sección 9.3)
+
+| Ruta | Acceso | Permiso |
+|---|---|---|
+| `GET /`, `/ayuda`, `/aviso-privacidad` | público | — |
+| `GET/POST /iniciar-sesion` | solo invitado | `iniciar_sesion` |
+| `POST /cerrar-sesion` · `GET /inicio` | autenticado | `cerrar_sesion` · — |
+| `GET/POST /solicitar-acceso`, `/reenviar-verificacion` | solo invitado | `solicitar_acceso` |
+| `GET /solicitud-recibida` · `GET/POST /verificar-solicitud` | público (con token) | — |
+| `GET/POST /activar-cuenta`, `/restablecer-contrasena` | público (con token) | — |
+| `GET/POST /recuperar-contrasena` | solo invitado | — |
+| `GET/POST /verificar-segundo-factor`, `/configurar-segundo-factor` | solo invitado con contraseña ya validada | — |
+| `GET /codigos-recuperacion` | autenticado (se muestran una vez) | — |
+| `GET /admin/solicitudes`, `/admin/solicitudes/detalle?id=` | autenticado | `revisar_solicitudes` |
+| `POST /admin/solicitudes/aprobar`, `/rechazar`, `/reenviar-invitacion` | autenticado | `resolver_solicitud` |
+| `GET /admin/usuarios` · `POST /admin/usuarios/estado` | autenticado | `administrar_cuentas` · `gestionar_estado_cuenta` |
+| `GET /admin/bitacora` | autenticado | `consultar_bitacora` |
+| `GET /admin/roles` · `POST /admin/roles/cambiar`, `/restablecer-segundo-factor` | autenticado | `asignar_rol_administrativo` (solo principal) |
+| `GET /registro` | público | redirige a `/solicitar-acceso` (el `POST` ya no existe: 405) |
+
+### Decisiones de seguridad y dónde están
+
+- **Tokens** (SEG-03/SEG-14): 256 bits; solo se guarda su SHA-256; un uso (`UPDATE ... WHERE fecha_consumo IS NULL`
+  y se revisan las filas afectadas); finalidades separadas; uno vigente por cuenta y finalidad. Verificación y
+  activación: 24 h; recuperación: 30 min (políticas propuestas, en `config/aplicacion.php`).
+- **URL limpia**: el `GET ?token=` solo guarda el token en la sesión y redirige a la ruta sin token; el cambio se hace
+  con un `POST` con CSRF (los antivirus de correo que "abren" enlaces no consumen nada). `Referrer-Policy: no-referrer`
+  en todas las respuestas. Limitación: el primer GET sí queda en el log de acceso de Apache.
+- **Enlaces de correo** armados con `APP_URL_PUBLICA`, nunca con el encabezado `Host` (evita enlaces envenenados).
+- **Respuestas neutrales** (SEG-06): solicitar, reenviar y recuperar responden igual exista o no el correo; una cuenta
+  INVITADA/SUSPENDIDA/BAJA recibe el mismo "No fue posible iniciar sesión" que una contraseña errónea.
+- **Duplicados** (AC-04): una columna calculada con `UNIQUE` impide dos solicitudes PENDIENTES con el mismo correo,
+  aun con envíos simultáneos; reenviar invalida el enlace anterior; una solicitud rechazada no se reabre en silencio.
+- **Aprobación atómica**: bloqueo de la fila (`FOR UPDATE`) + cuenta + resolución + token + auditoría en una
+  transacción; el correo se envía después y, si falla, la interfaz lo dice y se puede reenviar.
+- **Segundo factor** (SEG-08): TOTP RFC 6238 propio, sin dependencias. Con la contraseña correcta un administrador
+  **no** obtiene sesión: queda 5 min en "pendiente". El secreto se guarda cifrado con AES-256-GCM (clave derivada por
+  HKDF de `CLAVE_HUELLAS`, ligado al id de la cuenta); un código ya usado no se acepta otra vez; 10 códigos de
+  recuperación (solo su HMAC en la BD); 5 intentos por ventana. `GestorSesion` además rechaza cualquier sesión
+  administrativa sin la marca de segundo factor.
+- **Límites** (SEG-07): solicitar/reenviar/recuperar: 3 por correo y 30 por IP en 15 min (un salón comparte IP).
+- **Contraste** (WCAG 1.4.3): el botón dorado tenía texto blanco a 2.42:1; ahora es marino sobre oro (5.60:1; 7.29:1 en
+  hover) y el foco es marino (13.5:1). Botones de al menos 44 px. "Procesando..." evita envíos dobles.
+
+### Actualizar el servidor (`equipo_7`)
+
+1. **Respaldo**: phpMyAdmin → `equipo_7` → Exportar.
+2. **Migración 004**: phpMyAdmin → `equipo_7` → SQL → pegar `database/migraciones/004-solicitud-acceso-activacion.sql` → Continuar.
+3. **Código**: en la Shell de XAMPP: `cd /d C:\xampp\htdocs\papc` y después `git pull`.
+4. **`.env`** del servidor: agregar
+   ```
+   APP_URL_PUBLICA=http://192.168.20.132/papc
+   CORREO_MODO=buzon_pruebas
+   CORREO_REMITENTE=no-responder@papc.invalid
+   ```
+5. **Primer principal**. Si tu cuenta ya existía (queda ACTIVA con la migración):
+   `C:\xampp\php\php.exe herramientas\inicializar-administrador-principal.php tu.correo@dominio.mx`.
+   Si no existe, agrega tu nombre: `... tu.correo@dominio.mx "Nombre(s)" "Apellido paterno"` y abre el enlace de
+   activación que imprime. Al iniciar sesión te pedirá configurar el segundo factor (Google Authenticator, Microsoft
+   Authenticator o FreeOTP) y te mostrará 10 códigos de recuperación **una sola vez**.
+6. **Leer los correos de prueba**: `C:\xampp\php\php.exe herramientas\ver-buzon-pruebas.php correo@dominio.mx`.
+7. **Emergencia** (se perdieron teléfono y códigos): `C:\xampp\php\php.exe herramientas\restablecer-segundo-factor.php correo@dominio.mx`.
+
+El orden importa: con la migración aplicada y el código anterior, el registro viejo falla; con el código nuevo y sin
+la migración, la aplicación responde error 500 (la columna `estado_cuenta_usuario` no existe).
+
+### Pruebas ejecutadas (19/11/2026)
+
+Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 local en `127.0.0.1:3399` (base desechable
+`papc_db_pruebas`, cuenta de aplicación con los GRANT de `usuario-aplicacion.sql`), servidor embebido `php -S`.
+Resultado: **71/71** (19 unitarias, 34 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
+**No se ejecutaron en el XAMPP del servidor.**
+
+| AC | Caso | Prueba(s) | Resultado |
+|---|---|---|---|
+| AC-01 | Visitante en `/solicitar-acceso` sin opciones administrativas | H01, P01 | Pasa |
+| AC-02 | Solicitud con rol o estado adulterados | U02, P10a, P10b | Pasa (400, auditado, sin solicitud) |
+| AC-03 | Correo no verificado no es aprobable | P02 | Pasa |
+| AC-04 | Solicitud duplicada | P03 | Pasa |
+| AC-05 / AC-15 | Usuario común en la bandeja o aprobando | P11a, P11b | Pasa (403, sin cambios) |
+| AC-06 | Aprobación válida | P27, H06, P37 | Pasa |
+| AC-07 | Rechazo válido | P28 | Pasa |
+| AC-08 | Activación con enlace vencido | P30b | Pasa |
+| AC-09 | Token usado dos veces | P30a, P32 | Pasa **en secuencia**; el uso simultáneo real no se probó |
+| AC-10 / AC-11 | Contraseña común / frase segura de 15+ | U07, U15, P30a, H04 | Pasa |
+| AC-12 | Cuenta INVITADA intenta login | P29, P07b | Pasa |
+| AC-13 | Usuario ACTIVO inicia sesión | P31, P06b | Pasa |
+| AC-14 | Administrador sin segundo factor | P26a, P35, H05 | Pasa |
+| AC-16 | Cuenta suspendida con cookie antigua | P33 | Pasa |
+| AC-17 / AC-18 | Recuperación neutral; token usado o vencido | P32, H08 | Pasa |
+| AC-19 | POST sin CSRF | P13b, P10a | Pasa |
+| AC-20 | SQL y HTML en campos | P14b, P14c | Pasa |
+| AC-21 | Peticiones reiteradas | P15, P15b | Pasa |
+| AC-22 | Cerrar sesión y "Atrás" | P08b, P06b (`Cache-Control: no-store`) | Pasa por HTTP; el botón Atrás de un navegador real no se probó |
+| AC-23 | Rutas internas por HTTP | P16 | Pasa con `php -S`; en Apache verificar con los `curl` de la Etapa 5. **HTTPS no demostrado** |
+| AC-24 / AC-25 | Teclado, lector de pantalla, móvil, contraste | — | Parcial: contraste calculado y vista móvil (375 px) revisada; **sin prueba con lector de pantalla ni con usuarios** |
+| AC-26 | Caída del servicio de correo | U14 | Parcial: un modo de correo inválido devuelve "no enviado"; el mensaje "envío pendiente" de la bandeja no tiene prueba automática |
+| AC-27 | Primer principal y reinicialización | P19, H02 | Pasa |
+
+**Prueba de mutación** (19/11/2026): se introdujeron a propósito tres defectos y las pruebas los detectaron:
+aprobar sin correo verificado (falla P02); administrador sin segundo factor (fallan P26a, P26b, P37, P38);
+cuenta aprobada que nace ACTIVA (fallan P19, P30a, P26a, P02). Después se restauró el código.
+
+### Limitaciones de esta versión
+
+1. **Correo real**: no hay servicio de correo; el modo `buzon_pruebas` guarda los mensajes en el servidor. El modo
+   `mail` depende de configurar SMTP en `php.ini` y no se probó.
+2. **HTTPS** no está configurado en el laboratorio (SEG-15, AC-23): contraseñas, cookies y enlaces viajan sin cifrar.
+3. **Padrón institucional**: el administrador coteja manualmente y escribe el método; no hay integración con un padrón.
+4. **Concurrencia real** (AC-09): el consumo de tokens es un `UPDATE` condicional (solo uno puede afectar la fila),
+   pero no se ejecutó una prueba con dos peticiones simultáneas (`php -S` en Windows atiende una a la vez).
+5. **Tiempos**: las respuestas neutrales tienen el mismo texto, pero cuando el correo existe se escribe un mensaje
+   (más trabajo); midiendo tiempos con precisión podría notarse la diferencia.
+6. **Segundo factor**: si alguien conoce la contraseña de un administrador que aún no configuró su TOTP, podría
+   configurarlo él; el principal debe configurarlo en cuanto recibe el rol. No hay código QR (la clave se escribe a mano).
+7. **Lista de bloqueo** local y pequeña; no se consulta un corpus de contraseñas filtradas.
+8. **Aviso de privacidad**: es un borrador del prototipo; responsable y plazos de conservación los define la institución.
+9. **MariaDB 10.4** (la del XAMPP): la migración 004 se probó en MariaDB 11.5 (aplicar, revertir y volver a aplicar);
+   las columnas `PERSISTENT` con `UNIQUE` y los `CHECK` están soportados desde 10.2, pero no se ejecutó en 10.4.
+10. **Esperas progresivas** (SEG-07): se usa una ventana deslizante de 15 min, no esperas que crecen.
+11. **Usabilidad** (sección 8.5): falta la prueba con al menos una persona ajena al proyecto.
 
 ---
 
@@ -205,6 +376,9 @@ borrar ni alterar la bitácora); `SELECT, INSERT, DELETE` en `intento_acceso`; n
 
 ## Etapa 4. Implementación: cómo se relacionan los componentes
 
+> Tabla de la Fase I. La tabla vigente de rutas está en la sección "Especificación 1.3" (arriba):
+> `/registro` ya no acepta envíos y `/admin/usuarios/rol` pasó a `/admin/roles/cambiar`.
+
 | Ruta (NOM-14) | Acceso | Permiso RBAC | Acción |
 |---|---|---|---|
 | `GET /` | público | — | Redirige a `/inicio` |
@@ -390,8 +564,10 @@ for %r in (/papc/.env /papc/.git/config /papc/config/database.php /papc/database
 ```
 
 ### 7. Primer administrador principal
-No hay cuentas ni contraseñas predeterminadas. Regístrate en `http://192.168.20.132/papc/registro` con tu
-propia contraseña (mínimo 15 caracteres) y luego, en la Shell del servidor:
+> **Actualizado en la especificación 1.3**: ya no existe el registro abierto. Sigue los pasos 5 a 7 de la sección
+> "Actualizar el servidor" del inicio de este README. Lo siguiente aplica a una cuenta que ya existía:
+
+No hay cuentas ni contraseñas predeterminadas. En la Shell del servidor:
 ```cmd
 C:\xampp\php\php.exe herramientas\inicializar-administrador-principal.php tu.correo@dominio.mx
 ```
@@ -638,6 +814,10 @@ Esto **no** constituye certificación de cumplimiento de OWASP ASVS 5.0: es una 
 implementados y probados en el alcance indicado.
 
 ### Limitaciones y controles pendientes
+> Lista de la Fase I. Con la especificación 1.3 quedaron resueltos: confirmación de correo y recuperación (2),
+> MFA para administradores (5), enumeración y límite de frecuencia del alta (6) y suspensión de cuentas (7).
+> Las limitaciones vigentes están en la sección "Especificación 1.3".
+
 1. **Verificación institucional de profesores**: hoy es una revisión manual de un administrador. Falta un mecanismo
    institucional (p. ej. lista oficial de la universidad o validación por correo + documento). Mientras tanto,
    `VERIFICADA` **no concede ningún beneficio** en el sistema.
