@@ -30,9 +30,12 @@ Fuentes: `Fase_I_Diseno_Arquitectura_PAPC_Nomenclatura_v1_2.pdf` y `esquema_papc
 | 5 | No hay mecanismo para invalidar sesiones abiertas tras revocar un rol o cambiar la contraseña. | Columna `version_sesion_usuario` (migración 001). |
 | 6 | `auditoria` sí admite los datos necesarios (`accion`, `entidad`, `id_registro`, `detalle` TEXT). | Se usa sin cambios; el detalle se guarda como JSON. |
 | 7 | La Fase I no define cómo se crea el primer `ADMINISTRADOR_PRINCIPAL`. | Herramienta de consola de un solo uso (ver RBAC). |
+| 8 | `nombre_usuario` guarda el nombre completo en un solo campo (no atómico, 1FN): no se puede ordenar ni buscar por apellido ni validar cada parte. Detectado por el equipo al usar el sistema. | Migración 003: `nombres_usuario`, `apellido_paterno_usuario`, `apellido_materno_usuario` (opcional); `nombre_usuario` se conserva como columna **calculada**. |
 
 ### Cambios mínimos
-Ninguna tabla ni columna original se renombró o eliminó. Todo lo nuevo está en migraciones separadas y reversibles.
+Ninguna tabla se eliminó ni se renombró ninguna columna. La única columna original redefinida es
+`nombre_usuario` (migración 003, a petición del equipo): conserva su nombre y su tipo `VARCHAR(100)`, pero
+ahora la calcula MariaDB a partir de las partes del nombre. Todo lo nuevo está en migraciones separadas y reversibles.
 
 ---
 
@@ -81,7 +84,7 @@ papc/
 ├── database/
 │   ├── schema.sql                       [Fase I]  Esquema 1.2 original
 │   ├── usuario-aplicacion.sql           [nuevo]   Cuenta MariaDB de mínimos privilegios
-│   └── migraciones/                     [nuevo]   001 y 002 con su reversión
+│   └── migraciones/                     [nuevo]   001, 002 y 003 con su reversión
 ├── herramientas/
 │   └── inicializar-administrador-principal.php  [nuevo] Solo consola
 ├── storage/
@@ -108,8 +111,9 @@ modelos ni conexiones duplicados.
 
 ## Etapa 3. Base de datos
 
-Orden de instalación: `schema.sql` → `001-clasificacion-usuario.sql` → `002-intento-acceso.sql` → `usuario-aplicacion.sql`.
-En el servidor, `equipo_7` ya tenía el esquema 1.2: solo se aplicaron las dos migraciones (Etapa 5, paso 3).
+Orden de instalación: `schema.sql` → `001-clasificacion-usuario.sql` → `002-intento-acceso.sql` →
+`003-nombre-atomico-usuario.sql` → `usuario-aplicacion.sql` (opcional).
+En el servidor, `equipo_7` ya tenía el esquema 1.2: solo se aplican las migraciones (Etapa 5, paso 3).
 
 ### Migración 001 — clasificación institucional y versión de sesión
 | Columna | Tipo | Por qué |
@@ -125,10 +129,48 @@ Guarda **huellas HMAC-SHA256** del correo y de la IP (nunca el dato en claro), c
 `(huella, fecha)`. Sin FK a `usuario` a propósito: se cuentan igual los intentos contra correos inexistentes,
 lo que evita enumerar cuentas. Se purgan registros con más de un día.
 
+### Migración 003 — nombre en partes atómicas
+El nombre completo en un solo campo no es atómico (primera forma normal): impide ordenar o buscar por
+apellido y validar cada parte. En México el formato institucional es nombres + apellido paterno + apellido
+materno. El resto del esquema ya estaba normalizado en lo estructural (sin datos repetidos entre tablas).
+
+Diccionario de `usuario` después de las migraciones 001–003 (12 columnas):
+
+| Columna | Tipo | Nulo | Regla |
+|---|---|---|---|
+| `id_usuario` | `INT UNSIGNED` PK | No | Autoincremental |
+| `nombres_usuario` | `VARCHAR(100)` | No | Formulario: 2 a 60 caracteres. 100 en BD solo para cuentas migradas, que conservan aquí su nombre completo |
+| `apellido_paterno_usuario` | `VARCHAR(50)` | Sí* | Obligatorio en el registro (2 a 50). `NULL` solo en cuentas anteriores a la migración |
+| `apellido_materno_usuario` | `VARCHAR(50)` | Sí | Opcional (hay personas con un solo apellido); vacío se guarda como `NULL` |
+| `nombre_usuario` | `VARCHAR(100)` **VIRTUAL** | — | `CONCAT_WS(' ', nombres, paterno, materno)`. Nadie lo escribe; se conserva para la Fase I y los demás módulos |
+| `correo_electronico_usuario` | `VARCHAR(150)` | No | `uq_usuario_correo_electronico_usuario` |
+| `hash_contrasena_usuario` | `VARCHAR(255)` | No | Argon2id |
+| `rol_usuario` | `ENUM` | No | `USUARIO`, `ADMINISTRADOR`, `ADMINISTRADOR_PRINCIPAL` |
+| `tipo_integrante_usuario` | `ENUM` | Sí* | `ALUMNO`, `PROFESOR` (migración 001) |
+| `estado_verificacion_usuario` | `ENUM` | No | `NO_REQUERIDA`, `PENDIENTE`, `VERIFICADA`, `RECHAZADA` |
+| `version_sesion_usuario` | `INT UNSIGNED` | No | Invalida sesiones al cambiar rol o contraseña |
+| `fecha_registro_usuario` | `TIMESTAMP` | No | `CURRENT_TIMESTAMP` |
+
+\* `NULL` solo para cuentas que ya existían antes de la migración correspondiente.
+
+Restricciones nuevas:
+- `chk_usuario_nombre_usuario`: el nombre completo no puede exceder 100 caracteres. Es defensa en
+  profundidad, porque el validador de PHP ya lo comprueba.
+- `idx_usuario_apellido_paterno_usuario`: acelera la búsqueda y el orden por apellido.
+
+**Cuentas existentes:** un nombre completo no se divide de forma confiable ("María José de la Garza"). Por eso
+cada cuenta migrada guarda su nombre completo en `nombres_usuario`, queda con los apellidos en `NULL` y su
+nombre visible no cambia. Se corrige a mano (ver Etapa 5, paso 3); el listado de administración las marca
+como "Apellidos pendientes".
+
 ### Respaldo y reversión
 Comandos para la Shell de XAMPP, desde `C:\xampp\htdocs\papc` (servidor: base `equipo_7`, puerto 3307):
 ```cmd
 C:\xampp\mysql\bin\mysqldump.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p --single-transaction equipo_7 > "%USERPROFILE%\Documents\respaldo_equipo_7.sql"
+```
+Las reversiones se aplican en orden inverso (003, 002, 001):
+```cmd
+C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 -e "source database/migraciones/003-nombre-atomico-usuario-revertir.sql"
 ```
 ```cmd
 C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 -e "source database/migraciones/002-intento-acceso-revertir.sql"
@@ -140,8 +182,14 @@ Para restaurar el respaldo completo:
 ```cmd
 C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 < "%USERPROFILE%\Documents\respaldo_equipo_7.sql"
 ```
-Revertir 001 **borra** la clasificación de todas las cuentas; el módulo deja de funcionar hasta volver a migrar.
-Aplicación y reversión de ambas migraciones fueron verificadas en MariaDB 11.5.2 (ver Etapa 6).
+Revertir 001 **borra** la clasificación de todas las cuentas; revertir 003 devuelve el nombre completo a
+`nombre_usuario` y pierde la separación en partes. En ambos casos el módulo deja de funcionar hasta volver a
+migrar (o regresar a la versión anterior del código).
+La aplicación y reversión de las tres migraciones se verificaron en MariaDB 11.5.2. La 003 se probó sobre una
+base con una cuenta existente ("María José de la Garza Pérez"), que conservó su nombre visible al migrar, al
+revertir y al volver a migrar; también se comprobó que el `CHECK` rechaza nombres de más de 100 caracteres y
+que `nombre_usuario` no se puede escribir. **No** se probó en MariaDB 10.4 (la versión de XAMPP), aunque
+las columnas calculadas y `CHECK` existen desde la 10.2.
 
 ### Mínimos privilegios (`usuario-aplicacion.sql`)
 `papc_app` tiene `SELECT, INSERT, UPDATE` en `usuario`; **solo `SELECT, INSERT`** en `auditoria` (no puede
@@ -242,7 +290,7 @@ páginas responden 403 (fallo encontrado y corregido al probar en Apache real).
 
 ### 3. Migrar la base `equipo_7`
 En el servidor la base **ya tenía las tablas del esquema 1.2**, así que **no** se ejecuta `schema.sql`; solo
-las dos migraciones. Todos los comandos llevan `-h 127.0.0.1 -P 3307 --protocol=TCP` para no conectarse por
+las migraciones 001, 002 y 003, en ese orden. Todos los comandos llevan `-h 127.0.0.1 -P 3307 --protocol=TCP` para no conectarse por
 error a otro MySQL en el 3306. Piden la contraseña de `usuario_equipo_7`.
 
 Respaldo previo (fuera de `htdocs`):
@@ -256,13 +304,43 @@ C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equi
 ```cmd
 C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p --default-character-set=utf8mb4 equipo_7 -e "source database/migraciones/002-intento-acceso.sql"
 ```
+```cmd
+C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p --default-character-set=utf8mb4 equipo_7 -e "source database/migraciones/003-nombre-atomico-usuario.sql"
+```
 `Duplicate column name` o `already exists` significan que esa migración ya estaba aplicada; `ALTER/CREATE
-command denied` significa que la cuenta no tiene ese permiso y debe aplicarla el profesor. Verificación:
+command denied` significa que la cuenta no tiene ese permiso y debe aplicarla el profesor.
+
+**Desde phpMyAdmin** (`http://192.168.20.132/phpmyadmin`, con la cuenta del equipo): selecciona la base
+`equipo_7` en el panel izquierdo → pestaña **SQL** → pega el contenido completo del archivo de la migración →
+**Continuar**. Respaldo previo: pestaña **Exportar** → **Continuar**. phpMyAdmin se usa por HTTP en la red del
+laboratorio, así que la contraseña viaja sin cifrar: no la reutilices en otros servicios.
+
+Verificación:
 ```cmd
 C:\xampp\mysql\bin\mysql.exe -h 127.0.0.1 -P 3307 --protocol=TCP -u usuario_equipo_7 -p equipo_7 -e "SELECT @@port; DESCRIBE usuario; SHOW TABLES;"
 ```
-Debe mostrar `3307`, las 9 columnas de `usuario` (las 6 originales más `tipo_integrante_usuario`,
-`estado_verificacion_usuario` y `version_sesion_usuario`) y la tabla `intento_acceso`.
+Debe mostrar `3307`, las **12 columnas** de `usuario` del diccionario de la Etapa 3 (`nombre_usuario` como
+`VIRTUAL GENERATED`) y la tabla `intento_acceso`.
+
+**Corregir las cuentas creadas antes de la 003** (quedan con los apellidos en `NULL`). Listarlas, en la
+pestaña SQL de phpMyAdmin:
+```sql
+SELECT id_usuario, nombre_usuario, correo_electronico_usuario FROM usuario WHERE apellido_paterno_usuario IS NULL;
+```
+Corregir cada una; el apellido materno puede quedar `NULL`, y `nombre_usuario` se recalcula solo:
+```sql
+UPDATE usuario
+   SET nombres_usuario = 'Nombre(s)', apellido_paterno_usuario = 'Paterno', apellido_materno_usuario = 'Materno'
+ WHERE correo_electronico_usuario = 'correo@dominio.mx';
+```
+
+**Actualizar el código en el servidor** después de una migración que lo requiera (como la 003):
+1. Aplica la migración.
+2. **Enseguida** descomprime el zip nuevo sobre `C:\xampp\htdocs\` y acepta reemplazar los archivos.
+
+El zip no trae `.env`, registros ni sesiones, así que tu configuración se conserva. Entre ambos pasos el
+registro de cuentas no funciona: el código anterior no puede registrar sobre la base migrada, y el código nuevo
+no funciona sin la migración.
 
 > **Instalación desde cero** (base vacía con `root`, por ejemplo en la computadora de un integrante):
 > crea la base y ejecuta además `source database/schema.sql;` antes de las migraciones, y opcionalmente
@@ -383,7 +461,7 @@ en `_pruebas`. La suite HTTP levanta `php -S` en el puerto 8097 con DocumentRoot
 
 ### Entorno de la ejecución real
 Las pruebas se ejecutaron el **19/11/2026** con **PHP 8.3.30 (Laragon) y MariaDB 11.5.2** en una instancia
-temporal aislada (localhost:3399), **no en XAMPP**. Resultado: **43 de 43 pasan** (`docs/evidencia-pruebas.txt`).
+temporal aislada (localhost:3399), **no en XAMPP**. Resultado: **45 de 45 pasan** (`docs/evidencia-pruebas.txt`).
 
 **Verificación en Apache real** (Apache 2.4.66 + PHP 8.3 como módulo, igual que XAMPP), con un `htdocs`
 configurado como el de XAMPP (`AllowOverride All`, `Options Indexes`), el `docs/xampp/papc.conf` sin cambios
@@ -410,7 +488,7 @@ del principal y la verificación de archivos privados (Etapa 5, pasos 6 y 7).
 | 1 | Registro de alumno | P01, H01 | Formulario válido tipo ALUMNO | Rol USUARIO, `NO_REQUERIDA`, auditado | Pasa |
 | 2 | Registro de profesor sin permisos extra | P02, H01 | Tipo PROFESOR | Rol USUARIO, `PENDIENTE`, sin permisos administrativos | Pasa |
 | 3 | Correos duplicados | P03, H01 | Mismo correo, también en mayúsculas | Rechazo (409), una sola fila | Pasa |
-| 4 | Campos inválidos | P04 | 13 casos (vacíos, longitudes, arreglos, UTF-8 inválido, tipo no permitido) | Error por campo | Pasa |
+| 4 | Campos inválidos | P04, U06 | 19 casos (nombres y apellidos vacíos o fuera de longitud, etiquetas, arreglos, UTF-8 inválido, tipo no permitido) y nombre completo de más de 100 | Error por campo | Pasa |
 | 5 | Almacenamiento seguro | P05a, P05b | Contraseña de 30 caracteres | `$argon2id$m=65536,t=4,p=1`, salado, sin texto claro en BD ni auditoría | Pasa |
 | 6 | Login válido | P06, P06b | Credenciales correctas | 303 a `/inicio`, ID de sesión regenerado, cookie HttpOnly/SameSite | Pasa |
 | 7 | Credenciales incorrectas | P07, P07b | Contraseña mala / correo inexistente | Mismo código (401) y mismo mensaje | Pasa |
@@ -427,8 +505,9 @@ del principal y la verificación de archivos privados (Etapa 5, pasos 6 y 7).
 
 Pruebas adicionales: P18 (re-autenticación y prohibición de cambiar el propio rol), P19 (inicialización única
 del principal), P20 (expiración por inactividad y duración máxima), P22 (mínimo privilegio en MariaDB),
-P23 (verificación de profesor sin cambio de rol), U01–U05 (validación, parámetros inesperados, redirección
-abierta, matriz RBAC, publicación en /papc).
+P23 (verificación de profesor sin cambio de rol), P24 (nombre atómico en la BD: columna calculada y `CHECK`),
+U01–U06 (validación, parámetros inesperados, redirección abierta, matriz RBAC, publicación en /papc,
+nombre por partes).
 
 ### ¿Las pruebas detectan fallos? (prueba de mutación ejecutada)
 En una copia desechable se introdujo un defecto a la vez:
@@ -467,7 +546,7 @@ fuera de camelCase, ninguna clase CSS fuera de kebab-case.
 | NOM-02 Tablas en singular | `usuario`, `auditoria`, `intento_acceso` | `database/migraciones/002-intento-acceso.sql` |
 | NOM-03 PK `id_<entidad>` | `id_intento_acceso` | migración 002 |
 | NOM-04 FK descriptiva | Ninguna FK nueva (decisión justificada); existentes intactas: `id_usuario_actor` | `schema.sql` |
-| NOM-05 Columna atributo + entidad | `tipo_integrante_usuario`, `huella_origen_intento_acceso` | migraciones 001 y 002 |
+| NOM-05 Columna atributo + entidad | `apellido_paterno_usuario`, `tipo_integrante_usuario`, `huella_origen_intento_acceso` | migraciones 001 a 003 |
 | NOM-06 `uq_<tabla>_<campo>` | `uq_usuario_correo_electronico_usuario` (usada por el registro) | `schema.sql` |
 | NOM-07 `idx_<tabla>_<campo>` | `idx_usuario_estado_verificacion_usuario`, `idx_intento_acceso_fecha_intento_acceso` | migraciones |
 | NOM-08 `fk_<origen>_<relación>` | Sin FK nuevas; `fk_auditoria_usuario_actor` intacta | `schema.sql` |
@@ -479,7 +558,7 @@ fuera de camelCase, ninguna clase CSS fuera de kebab-case.
 | NOM-14 Rutas/archivos kebab-case | `/iniciar-sesion`, `/cerrar-sesion`, `inicializar-administrador-principal.php` | `config/rutas.php` |
 | NOM-15 CSS kebab-case | `tarjeta-formulario`, `boton-principal`, `mensaje-error` | `public/css/portal.css` |
 
-Nota: los nombres de campos HTML (`correo_electronico`, `token_csrf`) usan snake_case para coincidir con las
+Restricción `CHECK` (migración 003): NOM-01 a NOM-15 no definen un prefijo para `CHECK`; se propone\n`chk_<tabla>_<campo>` siguiendo el patrón de NOM-06/NOM-07 (`chk_usuario_nombre_usuario`).\n\nNota: los nombres de campos HTML (`correo_electronico`, `token_csrf`) usan snake_case para coincidir con las
 columnas; NOM-12 aplica a variables PHP/JS, que sí cumplen. No hay JavaScript en el módulo.
 
 ### Cumplimiento de la matriz RBAC

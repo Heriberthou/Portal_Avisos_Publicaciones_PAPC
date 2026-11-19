@@ -115,11 +115,10 @@ final class AuthController
         $this->rechazarParametrosInesperados($datosFormulario, ValidadorEntrada::CAMPOS_REGISTRO, 'registro');
 
         $validacion = ValidadorEntrada::validarDatosRegistro($datosFormulario);
-        $valoresPrevios = [
-            'nombre_usuario'     => ValidadorEntrada::obtenerTexto($datosFormulario, 'nombre_usuario') ?? '',
-            'correo_electronico' => ValidadorEntrada::obtenerTexto($datosFormulario, 'correo_electronico') ?? '',
-            'tipo_integrante'    => ValidadorEntrada::obtenerTexto($datosFormulario, 'tipo_integrante') ?? '',
-        ];
+        $valoresPrevios = [];
+        foreach (['nombres_usuario', 'apellido_paterno_usuario', 'apellido_materno_usuario', 'correo_electronico', 'tipo_integrante'] as $campo) {
+            $valoresPrevios[$campo] = ValidadorEntrada::obtenerTexto($datosFormulario, $campo) ?? '';
+        }
         if (!$validacion['valido']) {
             return $this->vistaRegistro($valoresPrevios, $validacion['errores'], null, 422);
         }

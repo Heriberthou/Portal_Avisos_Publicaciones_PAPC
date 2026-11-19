@@ -13,8 +13,8 @@ final class ValidadorEntrada
 {
     /** Campos aceptados por el formulario de registro. */
     public const CAMPOS_REGISTRO = [
-        'token_csrf', 'nombre_usuario', 'correo_electronico',
-        'contrasena', 'confirmacion_contrasena', 'tipo_integrante',
+        'token_csrf', 'nombres_usuario', 'apellido_paterno_usuario', 'apellido_materno_usuario',
+        'correo_electronico', 'contrasena', 'confirmacion_contrasena', 'tipo_integrante',
     ];
 
     /** Campos aceptados por el formulario de inicio de sesión. */
@@ -25,7 +25,7 @@ final class ValidadorEntrada
      * públicos. Su presencia indica manipulación y se audita.
      */
     public const CAMPOS_PROTEGIDOS = [
-        'id_usuario', 'rol', 'rol_usuario', 'hash_contrasena_usuario',
+        'id_usuario', 'rol', 'rol_usuario', 'hash_contrasena_usuario', 'nombre_usuario',
         'estado_verificacion', 'estado_verificacion_usuario',
         'fecha_registro_usuario', 'version_sesion_usuario', 'tipo_integrante_usuario',
     ];
@@ -71,23 +71,43 @@ final class ValidadorEntrada
      * Valida los datos del registro público.
      *
      * No valida el token CSRF (lo hace el enrutador) ni decide el rol: el
-     * rol jamás es un dato de entrada.
+     * rol jamás es un dato de entrada. El nombre llega en partes (migración
+     * 003): nombres y apellido paterno obligatorios, apellido materno
+     * opcional; el nombre completo lo calcula MariaDB.
      *
      * @param array<mixed> $datosRecibidos Datos del formulario.
-     * @return array{valido: bool, datos: array<string, string>, errores: array<string, string>}
+     * @return array{valido: bool, datos: array<string, string|null>, errores: array<string, string>}
      */
     public static function validarDatosRegistro(array $datosRecibidos): array
     {
         $errores = [];
-        $nombreUsuario = self::obtenerTexto($datosRecibidos, 'nombre_usuario');
+        $nombresUsuario = self::normalizarParteNombre(self::obtenerTexto($datosRecibidos, 'nombres_usuario'));
+        $apellidoPaterno = self::normalizarParteNombre(self::obtenerTexto($datosRecibidos, 'apellido_paterno_usuario'));
+        $apellidoMaterno = self::normalizarParteNombre(self::obtenerTexto($datosRecibidos, 'apellido_materno_usuario'));
         $correoElectronico = self::obtenerTexto($datosRecibidos, 'correo_electronico');
         $contrasena = self::obtenerTexto($datosRecibidos, 'contrasena', false);
         $confirmacionContrasena = self::obtenerTexto($datosRecibidos, 'confirmacion_contrasena', false);
         $tipoIntegrante = self::obtenerTexto($datosRecibidos, 'tipo_integrante');
 
-        $errorNombre = self::validarNombre($nombreUsuario);
-        if ($errorNombre !== null) {
-            $errores['nombre_usuario'] = $errorNombre;
+        // El apellido materno es opcional, pero si se envía como arreglo o
+        // con UTF-8 inválido se rechaza en lugar de ignorarse.
+        $maternoEnviadoInvalido = array_key_exists('apellido_materno_usuario', $datosRecibidos)
+            && self::obtenerTexto($datosRecibidos, 'apellido_materno_usuario') === null;
+
+        $erroresNombre = array_filter([
+            'nombres_usuario'          => self::validarParteNombre($nombresUsuario, 'Los nombres', LONGITUD_MAXIMA_NOMBRES_USUARIO, true),
+            'apellido_paterno_usuario' => self::validarParteNombre($apellidoPaterno, 'El apellido paterno', LONGITUD_MAXIMA_APELLIDO_USUARIO, true),
+            'apellido_materno_usuario' => $maternoEnviadoInvalido
+                ? 'El apellido materno no es válido.'
+                : self::validarParteNombre($apellidoMaterno, 'El apellido materno', LONGITUD_MAXIMA_APELLIDO_USUARIO, false),
+        ]);
+        $errores += $erroresNombre;
+
+        if ($erroresNombre === []) {
+            $nombreCompleto = implode(' ', array_filter([$nombresUsuario, $apellidoPaterno, $apellidoMaterno]));
+            if (mb_strlen($nombreCompleto) > LONGITUD_MAXIMA_NOMBRE_USUARIO) {
+                $errores['nombres_usuario'] = sprintf('El nombre completo no puede exceder %d caracteres.', LONGITUD_MAXIMA_NOMBRE_USUARIO);
+            }
         }
 
         $correoNormalizado = $correoElectronico === null ? null : self::normalizarCorreo($correoElectronico);
@@ -110,8 +130,10 @@ final class ValidadorEntrada
         return [
             'valido'  => $errores === [],
             'datos'   => $errores === [] ? [
-                'nombre_usuario'     => self::normalizarEspacios((string) $nombreUsuario),
-                'correo_electronico' => (string) $correoNormalizado,
+                'nombres_usuario'          => (string) $nombresUsuario,
+                'apellido_paterno_usuario' => (string) $apellidoPaterno,
+                'apellido_materno_usuario' => $apellidoMaterno,
+                'correo_electronico'       => (string) $correoNormalizado,
                 'contrasena'         => (string) $contrasena,
                 'tipo_integrante'    => (string) $tipoIntegrante,
             ] : [],
@@ -182,20 +204,25 @@ final class ValidadorEntrada
     }
 
     /**
-     * @param string|null $nombreUsuario Nombre recibido.
-     * @return string|null Mensaje de error o null si es válido.
+     * Valida una parte del nombre (nombres, apellido paterno o materno).
+     *
+     * @param string|null $parteNombre Valor ya normalizado (null si vacío).
+     * @param string $descripcion Sujeto para el mensaje (p. ej. "El apellido paterno").
+     * @param int $longitudMaxima Máximo de caracteres de la columna.
+     * @param bool $esObligatoria Si puede omitirse (apellido materno).
+     * @return string|null Mensaje de error o null si es válida.
      */
-    private static function validarNombre(?string $nombreUsuario): ?string
+    private static function validarParteNombre(?string $parteNombre, string $descripcion, int $longitudMaxima, bool $esObligatoria): ?string
     {
-        if ($nombreUsuario === null || $nombreUsuario === '') {
-            return 'El nombre es obligatorio.';
+        if ($parteNombre === null) {
+            return $esObligatoria ? "{$descripcion} es obligatorio." : null;
         }
-        $longitud = mb_strlen($nombreUsuario);
-        if ($longitud < LONGITUD_MINIMA_NOMBRE_USUARIO || $longitud > LONGITUD_MAXIMA_NOMBRE_USUARIO) {
-            return sprintf('El nombre debe tener entre %d y %d caracteres.', LONGITUD_MINIMA_NOMBRE_USUARIO, LONGITUD_MAXIMA_NOMBRE_USUARIO);
+        $longitud = mb_strlen($parteNombre);
+        if ($longitud < LONGITUD_MINIMA_PARTE_NOMBRE || $longitud > $longitudMaxima) {
+            return sprintf('%s debe tener entre %d y %d caracteres.', $descripcion, LONGITUD_MINIMA_PARTE_NOMBRE, $longitudMaxima);
         }
-        if (preg_match(self::PATRON_NOMBRE, $nombreUsuario) !== 1) {
-            return 'El nombre solo puede contener letras, espacios, puntos, apóstrofos y guiones.';
+        if (preg_match(self::PATRON_NOMBRE, $parteNombre) !== 1) {
+            return "{$descripcion} solo puede contener letras, espacios, puntos, apóstrofos y guiones.";
         }
         return null;
     }
@@ -246,13 +273,18 @@ final class ValidadorEntrada
     }
 
     /**
-     * Reduce espacios internos repetidos a uno solo.
+     * Reduce espacios internos repetidos a uno solo y convierte el texto
+     * vacío en null (así un apellido materno en blanco se guarda como NULL).
      *
-     * @param string $texto Texto original.
-     * @return string Texto normalizado.
+     * @param string|null $texto Texto ya recortado por obtenerTexto().
+     * @return string|null Texto normalizado o null si quedó vacío.
      */
-    private static function normalizarEspacios(string $texto): string
+    private static function normalizarParteNombre(?string $texto): ?string
     {
-        return (string) preg_replace('/\s+/u', ' ', $texto);
+        if ($texto === null) {
+            return null;
+        }
+        $textoNormalizado = (string) preg_replace('/\s+/u', ' ', $texto);
+        return $textoNormalizado === '' ? null : $textoNormalizado;
     }
 }

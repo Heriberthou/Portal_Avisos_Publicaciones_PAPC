@@ -38,7 +38,8 @@ final class ServicioAutenticacion
      * - PROFESOR -> estado PENDIENTE hasta que un administrador lo resuelva.
      *   Ninguno de los dos recibe permisos adicionales.
      *
-     * @param array{nombre_usuario: string, correo_electronico: string, contrasena: string, tipo_integrante: string} $datosValidados
+     * @param array{nombres_usuario: string, apellido_paterno_usuario: string, apellido_materno_usuario: string|null,
+     *              correo_electronico: string, contrasena: string, tipo_integrante: string} $datosValidados
      *        Salida de ValidadorEntrada::validarDatosRegistro().
      * @return array{exito: bool, idUsuario: int|null}
      * @throws PDOException Ante errores de BD distintos a un duplicado.
@@ -58,7 +59,9 @@ final class ServicioAutenticacion
 
         try {
             $idUsuario = $this->usuarioModel->crearUsuario(
-                $datosValidados['nombre_usuario'],
+                $datosValidados['nombres_usuario'],
+                $datosValidados['apellido_paterno_usuario'],
+                $datosValidados['apellido_materno_usuario'],
                 $correoElectronico,
                 GestorContrasenas::generarHash($datosValidados['contrasena']),
                 $tipoIntegrante,

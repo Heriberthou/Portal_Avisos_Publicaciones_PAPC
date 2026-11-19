@@ -28,7 +28,12 @@ $idUsuarioActual = (int) $datosVista['usuarioActual']['id_usuario'];
             <?php $idUsuarioFila = (int) $usuarioFila['id_usuario']; ?>
             <tr>
                 <td><?= $idUsuarioFila ?></td>
-                <td><?= Vista::escapar($usuarioFila['nombre_usuario']) ?></td>
+                <td>
+                    <?= Vista::escapar($usuarioFila['nombre_usuario']) ?>
+                    <?php if ($usuarioFila['apellido_paterno_usuario'] === null): ?>
+                        <br><small class="texto-secundario">Apellidos pendientes (cuenta anterior a la migración 003)</small>
+                    <?php endif; ?>
+                </td>
                 <td><?= Vista::escapar($usuarioFila['correo_electronico_usuario']) ?></td>
                 <td><?= Vista::escapar($usuarioFila['tipo_integrante_usuario'] ?? 'SIN CLASIFICAR') ?></td>
                 <td><?= Vista::escapar($usuarioFila['estado_verificacion_usuario']) ?></td>
