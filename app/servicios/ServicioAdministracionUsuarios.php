@@ -52,14 +52,14 @@ final class ServicioAdministracionUsuarios
 
         if (!$this->roleMiddleware->tienePermiso((string) $usuarioActor['rol_usuario'], 'asignar_rol_administrativo')) {
             $this->auditarDenegacionPrivilegio($idUsuarioActor, $idUsuarioObjetivo, 'SIN_PERMISO', $rolNuevo);
-            return $this->resultado(false, 'No tienes permiso para cambiar roles.');
+            return $this->resultado(false, 'No tiene permiso para cambiar roles.');
         }
         if (!in_array($rolNuevo, UsuarioModel::ROLES, true)) {
             return $this->resultado(false, 'El rol solicitado no es válido.');
         }
         if ($idUsuarioObjetivo === $idUsuarioActor) {
             $this->auditarDenegacionPrivilegio($idUsuarioActor, $idUsuarioObjetivo, 'CAMBIO_PROPIO_ROL', $rolNuevo);
-            return $this->resultado(false, 'No puedes cambiar tu propio rol. Debe hacerlo otro administrador principal.');
+            return $this->resultado(false, 'No puede cambiar su propio rol. Debe hacerlo otro administrador principal.');
         }
 
         $hashActor = $this->usuarioModel->obtenerHashContrasena($idUsuarioActor);
@@ -117,14 +117,14 @@ final class ServicioAdministracionUsuarios
 
         if (!$this->roleMiddleware->tienePermiso((string) $usuarioActor['rol_usuario'], 'verificar_clasificacion')) {
             $this->auditarDenegacionPrivilegio($idUsuarioActor, $idUsuarioObjetivo, 'SIN_PERMISO_VERIFICACION', $decision);
-            return $this->resultado(false, 'No tienes permiso para verificar clasificaciones.');
+            return $this->resultado(false, 'No tiene permiso para verificar clasificaciones.');
         }
         if (!in_array($decision, [UsuarioModel::VERIFICACION_VERIFICADA, UsuarioModel::VERIFICACION_RECHAZADA], true)) {
             return $this->resultado(false, 'La decisión no es válida.');
         }
         if ($idUsuarioObjetivo === $idUsuarioActor) {
             $this->auditarDenegacionPrivilegio($idUsuarioActor, $idUsuarioObjetivo, 'AUTOVERIFICACION', $decision);
-            return $this->resultado(false, 'No puedes resolver tu propia verificación.');
+            return $this->resultado(false, 'No puede resolver su propia verificación.');
         }
 
         $this->conexion->beginTransaction();

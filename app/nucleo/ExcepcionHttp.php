@@ -38,7 +38,7 @@ final class ExcepcionHttp extends RuntimeException
      */
     public static function solicitudInvalida(): self
     {
-        return new self(400, 'La solicitud no es válida. Vuelve a cargar el formulario e inténtalo de nuevo.');
+        return new self(400, 'La solicitud no es válida. Recargue la página e intente de nuevo.');
     }
 
     /**
@@ -46,7 +46,7 @@ final class ExcepcionHttp extends RuntimeException
      */
     public static function noAutenticado(): self
     {
-        return new self(401, 'Debes iniciar sesión para realizar esta operación.');
+        return new self(401, 'Inicie sesión para continuar.');
     }
 
     /**
@@ -54,7 +54,7 @@ final class ExcepcionHttp extends RuntimeException
      */
     public static function accesoDenegado(): self
     {
-        return new self(403, 'No tienes permiso para realizar esta operación.');
+        return new self(403, 'No tiene permiso para realizar esta acción.');
     }
 
     /**
@@ -70,6 +70,6 @@ final class ExcepcionHttp extends RuntimeException
      */
     public static function metodoNoPermitido(): self
     {
-        return new self(405, 'Método de solicitud no permitido.');
+        return new self(405, 'Esta acción no está permitida.');
     }
 }

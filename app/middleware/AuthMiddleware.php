@@ -13,10 +13,10 @@ final class AuthMiddleware
 {
     /** Mensajes al usuario según el motivo de expiración. */
     private const MENSAJES_EXPIRACION = [
-        GestorSesion::MOTIVO_INACTIVIDAD        => 'Tu sesión se cerró por inactividad. Inicia sesión de nuevo.',
-        GestorSesion::MOTIVO_DURACION_MAXIMA    => 'Tu sesión alcanzó su duración máxima. Inicia sesión de nuevo.',
-        GestorSesion::MOTIVO_VERSION_CAMBIADA   => 'Tus permisos o credenciales cambiaron. Inicia sesión de nuevo.',
-        GestorSesion::MOTIVO_CUENTA_INEXISTENTE => 'Tu sesión ya no es válida. Inicia sesión de nuevo.',
+        GestorSesion::MOTIVO_INACTIVIDAD        => 'Su sesión se cerró por inactividad. Inicie sesión de nuevo.',
+        GestorSesion::MOTIVO_DURACION_MAXIMA    => 'Su sesión llegó a su tiempo máximo. Inicie sesión de nuevo.',
+        GestorSesion::MOTIVO_VERSION_CAMBIADA   => 'Sus permisos o su contraseña cambiaron. Inicie sesión de nuevo.',
+        GestorSesion::MOTIVO_CUENTA_INEXISTENTE => 'Su sesión ya no es válida. Inicie sesión de nuevo.',
     ];
 
     /**

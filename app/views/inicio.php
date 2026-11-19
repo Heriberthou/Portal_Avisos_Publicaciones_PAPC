@@ -12,7 +12,7 @@ declare(strict_types=1);
 $usuarioActual = $datosVista['usuarioActual'];
 ?>
 <section class="tarjeta-formulario">
-    <h1>Hola, <?= Vista::escapar($usuarioActual['nombre_usuario']) ?></h1>
+    <h1>Bienvenido(a), <?= Vista::escapar($usuarioActual['nombre_usuario']) ?></h1>
 
     <dl class="datos-cuenta">
         <dt>Correo electrónico</dt>
@@ -29,7 +29,7 @@ $usuarioActual = $datosVista['usuarioActual'];
         <p><a href="<?= Vista::escapar(Vista::url('/admin/usuarios')) ?>">Administrar cuentas</a></p>
     <?php endif; ?>
 
-    <p class="texto-secundario">Por seguridad, tu sesión se cierra tras <?= (int) $datosVista['minutosInactividad'] ?> minuto(s) sin actividad.</p>
+    <p class="texto-secundario">Por seguridad, su sesión se cierra después de <?= (int) $datosVista['minutosInactividad'] ?> minuto(s) sin actividad.</p>
 
     <form method="post" action="<?= Vista::escapar(Vista::url('/cerrar-sesion')) ?>">
         <?= Vista::campoTokenCsrf() ?>

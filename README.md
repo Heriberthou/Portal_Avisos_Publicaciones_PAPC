@@ -547,7 +547,7 @@ y la contraseña no se transforma ni se cifra en el navegador (viaja en el POST;
 
 | Actividad | Cambio | Dónde | Prueba |
 |---|---|---|---|
-| E6-P04/P05/P06 | El login indica qué campo falta ("Escribe tu correo electrónico." / "Escribe tu contraseña.") y conserva el correo escrito; 422 sin consultar la BD | `ValidadorEntrada::validarDatosLogin()`, `AuthController`, `login.php` | U08 |
+| E6-P04/P05/P06 | El login indica qué campo falta ("Escriba su correo electrónico." / "Escriba su contraseña.") y conserva el correo escrito; 422 sin consultar la BD | `ValidadorEntrada::validarDatosLogin()`, `AuthController`, `login.php` | U08 |
 | E8-P07 | Laboratorio de consola con la consulta vulnerable y la preparada, mismas entradas maliciosas | `laboratorio/inyeccion-sql/` (ver su README) | U10 |
 | E9 (cliente) | `validacion-formularios.js`: mensajes por campo con los mismos textos del servidor, `aria-invalid`/`aria-describedby`, contador "N de 15 caracteres mínimos", aviso "Las contraseñas coinciden / no coinciden", botón Mostrar/Ocultar | `public/js/`, `login.php`, `registro.php`, `portal.css` | Prueba en navegador |
 | E9-P04/P05 | Sin JavaScript, el formulario conserva `required`/`minlength`/`maxlength` del HTML; si se eliminan, PHP vuelve a rechazar (P04, P10b) | `ValidadorEntrada` | P04, P10b |

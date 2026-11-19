@@ -77,7 +77,7 @@
                     return descripcion + ' debe tener entre ' + minimo + ' y ' + maximo + ' caracteres.';
                 }
                 if (!patronNombre.test(valor)) {
-                    return descripcion + ' solo puede contener letras, espacios, puntos, apóstrofos y guiones.';
+                    return descripcion + ' solo puede llevar letras, espacios, puntos, apóstrofos y guiones.';
                 }
                 return '';
 
@@ -88,10 +88,10 @@
                     return 'El correo electrónico es obligatorio.';
                 }
                 if (contarCaracteres(valor) > maximo) {
-                    return 'El correo no puede exceder ' + maximo + ' caracteres.';
+                    return 'El correo no puede tener más de ' + maximo + ' caracteres.';
                 }
                 if ((campo.validity && campo.validity.typeMismatch) || !patronCorreo.test(valor)) {
-                    return 'El correo electrónico no tiene un formato válido.';
+                    return 'Escriba un correo válido, por ejemplo: nombre@ejemplo.com';
                 }
                 return '';
 
@@ -103,14 +103,17 @@
                     return 'La contraseña es obligatoria.';
                 }
                 longitud = contarCaracteres(valor);
-                if (longitud < minimo || longitud > maximo) {
-                    return 'La contraseña debe tener entre ' + minimo + ' y ' + maximo + ' caracteres. Puedes usar una frase con espacios.';
+                if (longitud < minimo) {
+                    return 'La contraseña debe tener al menos ' + minimo + ' caracteres.';
+                }
+                if (longitud > maximo) {
+                    return 'La contraseña no puede tener más de ' + maximo + ' caracteres.';
                 }
                 return '';
 
             case 'confirmacion':
                 if (valor === '') {
-                    return 'Confirma tu contraseña.';
+                    return 'Escriba de nuevo su contraseña.';
                 }
                 var original = formulario.querySelector('#' + campo.getAttribute('data-confirma'));
                 return original && original.value !== valor ? 'Las contraseñas no coinciden.' : '';
@@ -118,7 +121,7 @@
             case 'opcion':
                 var nombreGrupo = campo.getAttribute('data-nombre');
                 return formulario.querySelector('input[name="' + nombreGrupo + '"]:checked')
-                    ? '' : 'Selecciona si te registras como alumno o profesor.';
+                    ? '' : 'Seleccione si se registra como alumno o profesor.';
 
             default:
                 return '';
@@ -181,7 +184,7 @@
             contador.classList.add('contador-excedido');
         } else if (longitud >= minimo) {
             // No se dice "segura": la longitud sola no lo garantiza.
-            contador.textContent = longitud + ' caracteres · longitud mínima cumplida';
+            contador.textContent = longitud + ' caracteres. Cumple el mínimo.';
             contador.classList.add('contador-ok');
         } else {
             contador.textContent = longitud + ' de ' + minimo + ' caracteres mínimos';

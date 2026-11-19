@@ -35,7 +35,7 @@ $errorContrasena = $errores['contrasena'] ?? '';
                 <input id="correo-electronico" name="correo_electronico" type="email" required
                        maxlength="<?= LONGITUD_MAXIMA_CORREO_ELECTRONICO ?>" autocomplete="username"
                        placeholder="usuario@ejemplo.com" data-validar="requerido"
-                       data-mensaje-vacio="Escribe tu correo electrónico."
+                       data-mensaje-vacio="Escriba su correo electrónico."
                        aria-describedby="error-correo-electronico"
                        <?= $errorCorreo !== '' ? 'aria-invalid="true"' : '' ?>
                        value="<?= Vista::escapar($datosVista['correoPrevio'] ?? '') ?>">
@@ -48,7 +48,7 @@ $errorContrasena = $errores['contrasena'] ?? '';
                     <input id="contrasena" name="contrasena" type="password" required
                            maxlength="<?= LONGITUD_MAXIMA_CONTRASENA ?>" autocomplete="current-password"
                            placeholder="••••••••••••" data-validar="requerido"
-                           data-mensaje-vacio="Escribe tu contraseña."
+                           data-mensaje-vacio="Escriba su contraseña."
                            aria-describedby="error-contrasena"
                            <?= $errorContrasena !== '' ? 'aria-invalid="true"' : '' ?>>
                     <button type="button" class="boton-mostrar" data-mostrar="contrasena" aria-controls="contrasena" aria-pressed="false" hidden>Mostrar</button>
@@ -58,7 +58,7 @@ $errorContrasena = $errores['contrasena'] ?? '';
 
             <div class="acciones-acceso">
                 <button type="submit" class="boton-principal">Entrar</button>
-                <p class="texto-secundario">¿No tienes cuenta? <a href="<?= Vista::escapar(Vista::url('/registro')) ?>">Regístrate</a></p>
+                <p class="texto-secundario">¿No tiene cuenta? <a href="<?= Vista::escapar(Vista::url('/registro')) ?>">Regístrese</a></p>
             </div>
         </form>
     </section>

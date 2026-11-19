@@ -106,7 +106,7 @@ final class ValidadorEntrada
         if ($erroresNombre === []) {
             $nombreCompleto = implode(' ', array_filter([$nombresUsuario, $apellidoPaterno, $apellidoMaterno]));
             if (mb_strlen($nombreCompleto) > LONGITUD_MAXIMA_NOMBRE_USUARIO) {
-                $errores['nombres_usuario'] = sprintf('El nombre completo no puede exceder %d caracteres.', LONGITUD_MAXIMA_NOMBRE_USUARIO);
+                $errores['nombres_usuario'] = sprintf('El nombre completo no puede tener más de %d caracteres.', LONGITUD_MAXIMA_NOMBRE_USUARIO);
             }
         }
 
@@ -124,7 +124,7 @@ final class ValidadorEntrada
         }
 
         if ($tipoIntegrante === null || !in_array($tipoIntegrante, UsuarioModel::TIPOS_INTEGRANTE, true)) {
-            $errores['tipo_integrante'] = 'Selecciona si te registras como alumno o profesor.';
+            $errores['tipo_integrante'] = 'Seleccione si se registra como alumno o profesor.';
         }
 
         return [
@@ -157,14 +157,14 @@ final class ValidadorEntrada
         $errores = [];
 
         if ($correoElectronico === null || $correoElectronico === '') {
-            $errores['correo_electronico'] = 'Escribe tu correo electrónico.';
+            $errores['correo_electronico'] = 'Escriba su correo electrónico.';
         } elseif (mb_strlen($correoElectronico) > LONGITUD_MAXIMA_CORREO_ELECTRONICO) {
-            $errores['correo_electronico'] = sprintf('El correo no puede exceder %d caracteres.', LONGITUD_MAXIMA_CORREO_ELECTRONICO);
+            $errores['correo_electronico'] = sprintf('El correo no puede tener más de %d caracteres.', LONGITUD_MAXIMA_CORREO_ELECTRONICO);
         }
         if ($contrasena === null || $contrasena === '') {
-            $errores['contrasena'] = 'Escribe tu contraseña.';
+            $errores['contrasena'] = 'Escriba su contraseña.';
         } elseif (mb_strlen($contrasena) > LONGITUD_MAXIMA_CONTRASENA) {
-            $errores['contrasena'] = sprintf('La contraseña no puede exceder %d caracteres.', LONGITUD_MAXIMA_CONTRASENA);
+            $errores['contrasena'] = sprintf('La contraseña no puede tener más de %d caracteres.', LONGITUD_MAXIMA_CONTRASENA);
         }
 
         $valido = $errores === [];
@@ -233,7 +233,7 @@ final class ValidadorEntrada
             return sprintf('%s debe tener entre %d y %d caracteres.', $descripcion, LONGITUD_MINIMA_PARTE_NOMBRE, $longitudMaxima);
         }
         if (preg_match(self::PATRON_NOMBRE, $parteNombre) !== 1) {
-            return "{$descripcion} solo puede contener letras, espacios, puntos, apóstrofos y guiones.";
+            return "{$descripcion} solo puede llevar letras, espacios, puntos, apóstrofos y guiones.";
         }
         return null;
     }
@@ -248,10 +248,10 @@ final class ValidadorEntrada
             return 'El correo electrónico es obligatorio.';
         }
         if (mb_strlen($correoElectronico) > LONGITUD_MAXIMA_CORREO_ELECTRONICO) {
-            return sprintf('El correo no puede exceder %d caracteres.', LONGITUD_MAXIMA_CORREO_ELECTRONICO);
+            return sprintf('El correo no puede tener más de %d caracteres.', LONGITUD_MAXIMA_CORREO_ELECTRONICO);
         }
         if (filter_var($correoElectronico, FILTER_VALIDATE_EMAIL) === false) {
-            return 'El correo electrónico no tiene un formato válido.';
+            return 'Escriba un correo válido, por ejemplo: nombre@ejemplo.com';
         }
         return null;
     }
@@ -269,19 +269,18 @@ final class ValidadorEntrada
             return 'La contraseña es obligatoria.';
         }
         $longitud = mb_strlen($contrasena);
-        if ($longitud < LONGITUD_MINIMA_CONTRASENA || $longitud > LONGITUD_MAXIMA_CONTRASENA) {
-            return sprintf(
-                'La contraseña debe tener entre %d y %d caracteres. Puedes usar una frase con espacios.',
-                LONGITUD_MINIMA_CONTRASENA,
-                LONGITUD_MAXIMA_CONTRASENA
-            );
+        if ($longitud < LONGITUD_MINIMA_CONTRASENA) {
+            return sprintf('La contraseña debe tener al menos %d caracteres.', LONGITUD_MINIMA_CONTRASENA);
+        }
+        if ($longitud > LONGITUD_MAXIMA_CONTRASENA) {
+            return sprintf('La contraseña no puede tener más de %d caracteres.', LONGITUD_MAXIMA_CONTRASENA);
         }
         if (ListaBloqueoContrasenas::esContrasenaDebil($contrasena)) {
-            return 'Esta contraseña es demasiado común o fácil de adivinar. Elige otra; puedes usar una frase larga.';
+            return 'Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra.';
         }
         $limiteBytes = GestorContrasenas::obtenerLimiteBytes();
         if ($limiteBytes !== null && strlen($contrasena) > $limiteBytes) {
-            return "La contraseña excede {$limiteBytes} bytes, el máximo que admite el algoritmo configurado.";
+            return 'La contraseña es demasiado larga. Por favor, use una más corta.';
         }
         return null;
     }

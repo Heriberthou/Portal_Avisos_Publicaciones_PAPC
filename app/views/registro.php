@@ -106,7 +106,7 @@ $marcarInvalido = static function (array $errores, string $campo): string {
                     <legend>Me registro como</legend>
                     <label><input type="radio" name="tipo_integrante" value="ALUMNO" required <?= $tipoPrevio === 'ALUMNO' ? 'checked' : '' ?>> Alumno</label>
                     <label><input type="radio" name="tipo_integrante" value="PROFESOR" <?= $tipoPrevio === 'PROFESOR' ? 'checked' : '' ?>> Profesor</label>
-                    <small class="texto-secundario">La condición de profesor queda pendiente de verificación y no otorga permisos adicionales.</small>
+                    <small class="texto-secundario">Si elige Profesor, su registro quedará pendiente de verificación. No da permisos adicionales.</small>
                 </fieldset>
                 <?= $mostrarErrorCampo($errores, 'tipo_integrante', 'error-tipo-integrante') ?>
             </div>
@@ -120,7 +120,7 @@ $marcarInvalido = static function (array $errores, string $campo): string {
                            aria-describedby="ayuda-contrasena contador-contrasena error-contrasena" <?= $marcarInvalido($errores, 'contrasena') ?>>
                     <button type="button" class="boton-mostrar" data-mostrar="contrasena" aria-controls="contrasena" aria-pressed="false" hidden>Mostrar</button>
                 </div>
-                <small class="texto-secundario" id="ayuda-contrasena">Utiliza al menos <?= LONGITUD_MINIMA_CONTRASENA ?> caracteres. Puedes escribir una frase larga con espacios. Evita contraseñas comunes o fáciles de adivinar.</small>
+                <small class="texto-secundario" id="ayuda-contrasena">Mínimo <?= LONGITUD_MINIMA_CONTRASENA ?> caracteres. Puede usar una frase con espacios. Evite contraseñas comunes.</small>
                 <small class="contador-contrasena" id="contador-contrasena" data-contador="contrasena" aria-live="polite"></small>
                 <?= $mostrarErrorCampo($errores, 'contrasena', 'error-contrasena') ?>
             </div>
@@ -139,7 +139,7 @@ $marcarInvalido = static function (array $errores, string $campo): string {
 
             <div class="acciones-acceso">
                 <button type="submit" class="boton-principal">Registrarme</button>
-                <p class="texto-secundario">¿Ya tienes cuenta? <a href="<?= Vista::escapar(Vista::url('/iniciar-sesion')) ?>">Inicia sesión</a></p>
+                <p class="texto-secundario">¿Ya tiene cuenta? <a href="<?= Vista::escapar(Vista::url('/iniciar-sesion')) ?>">Inicie sesión</a></p>
             </div>
         </form>
     </section>

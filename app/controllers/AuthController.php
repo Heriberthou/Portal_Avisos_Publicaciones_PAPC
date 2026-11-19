@@ -79,7 +79,7 @@ final class AuthController
             ),
             ServicioAutenticacion::RESULTADO_LIMITE_ALCANZADO => $this->vistaLogin(
                 $correoElectronico,
-                'Demasiados intentos fallidos. Espera unos minutos antes de volver a intentarlo.',
+                'Demasiados intentos fallidos. Espere unos minutos e intente de nuevo.',
                 429
             ),
             default => $this->vistaLogin($correoElectronico, self::MENSAJE_CREDENCIALES_INVALIDAS, 401),
@@ -128,14 +128,14 @@ final class AuthController
             return $this->vistaRegistro(
                 $valoresPrevios,
                 [],
-                'No fue posible completar el registro con esos datos. Si ya tienes una cuenta, inicia sesión.',
+                'No fue posible crear la cuenta con esos datos. Si ya tiene una cuenta, inicie sesión.',
                 409
             );
         }
 
-        $mensaje = 'Cuenta creada. Ya puedes iniciar sesión.';
+        $mensaje = 'Cuenta creada. Ya puede iniciar sesión.';
         if ($validacion['datos']['tipo_integrante'] === UsuarioModel::TIPO_PROFESOR) {
-            $mensaje .= ' Tu clasificación como profesor quedó PENDIENTE de verificación; mientras tanto tu cuenta tiene los mismos permisos que cualquier usuario.';
+            $mensaje .= ' Su registro como profesor está pendiente de verificación. Mientras tanto, su cuenta funciona igual que la de cualquier usuario.';
         }
         return $this->redirigirConMensaje('/iniciar-sesion', 'exito', $mensaje);
     }
@@ -150,7 +150,7 @@ final class AuthController
     public function cerrarSesion(?array $usuarioActual, array $datosFormulario): Respuesta
     {
         $this->servicioAutenticacion->cerrarSesion((array) $usuarioActual);
-        return $this->redirigirConMensaje('/iniciar-sesion', 'exito', 'Cerraste sesión correctamente.');
+        return $this->redirigirConMensaje('/iniciar-sesion', 'exito', 'Sesión cerrada correctamente.');
     }
 
     /**

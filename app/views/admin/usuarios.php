@@ -31,7 +31,7 @@ $idUsuarioActual = (int) $datosVista['usuarioActual']['id_usuario'];
                 <td>
                     <?= Vista::escapar($usuarioFila['nombre_usuario']) ?>
                     <?php if ($usuarioFila['apellido_paterno_usuario'] === null): ?>
-                        <br><small class="texto-secundario">Apellidos pendientes (cuenta anterior a la migración 003)</small>
+                        <br><small class="texto-secundario">Faltan los apellidos (cuenta creada antes del cambio de nombre)</small>
                     <?php endif; ?>
                 </td>
                 <td><?= Vista::escapar($usuarioFila['correo_electronico_usuario']) ?></td>
@@ -60,9 +60,9 @@ $idUsuarioActual = (int) $datosVista['usuarioActual']['id_usuario'];
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <label class="etiqueta-oculta" for="contrasena-confirmacion-<?= $idUsuarioFila ?>">Tu contraseña</label>
+                            <label class="etiqueta-oculta" for="contrasena-confirmacion-<?= $idUsuarioFila ?>">Su contraseña</label>
                             <input id="contrasena-confirmacion-<?= $idUsuarioFila ?>" type="password" name="contrasena_confirmacion"
-                                   placeholder="Tu contraseña" autocomplete="current-password" required>
+                                   placeholder="Su contraseña" autocomplete="current-password" required>
                             <button type="submit" class="boton-secundario">Cambiar rol</button>
                         </form>
                     <?php endif; ?>
