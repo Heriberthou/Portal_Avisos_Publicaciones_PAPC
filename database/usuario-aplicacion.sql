@@ -20,6 +20,10 @@
 --   * auditoria: solo SELECT e INSERT  -> bitácora de solo anexado.
 --   * usuario:   SELECT, INSERT, UPDATE -> no puede borrar cuentas.
 --   * intento_acceso: también DELETE (purga de intentos antiguos).
+--   * solicitud_acceso, token_solicitud, token_cuenta: SELECT, INSERT,
+--     UPDATE (los tokens se invalidan marcando su fecha de consumo; no se
+--     borran, para conservar el rastro).
+--   * codigo_recuperacion_mfa: también DELETE (al regenerar los códigos).
 -- Las tablas de avisos/comentarios/favoritos/propuestas se agregarán
 -- cuando se implementen esos módulos.
 -- =====================================================================
@@ -29,3 +33,7 @@ CREATE USER 'papc_app'@'localhost' IDENTIFIED BY 'CAMBIAR_POR_CONTRASENA_LARGA_Y
 GRANT SELECT, INSERT, UPDATE ON equipo_7.usuario TO 'papc_app'@'localhost';
 GRANT SELECT, INSERT ON equipo_7.auditoria TO 'papc_app'@'localhost';
 GRANT SELECT, INSERT, DELETE ON equipo_7.intento_acceso TO 'papc_app'@'localhost';
+GRANT SELECT, INSERT, UPDATE ON equipo_7.solicitud_acceso TO 'papc_app'@'localhost';
+GRANT SELECT, INSERT, UPDATE ON equipo_7.token_solicitud TO 'papc_app'@'localhost';
+GRANT SELECT, INSERT, UPDATE ON equipo_7.token_cuenta TO 'papc_app'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON equipo_7.codigo_recuperacion_mfa TO 'papc_app'@'localhost';

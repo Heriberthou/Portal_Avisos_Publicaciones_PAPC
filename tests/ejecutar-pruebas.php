@@ -25,6 +25,7 @@ require dirname(__DIR__) . '/app/nucleo/arranque.php';
 require __DIR__ . '/MarcoPruebas.php';
 require __DIR__ . '/BaseDatosPruebas.php';
 require __DIR__ . '/ClienteHttp.php';
+require __DIR__ . '/BuzonPruebas.php';
 
 $suiteSolicitada = $argv[1] ?? 'todas';
 $suitesValidas = ['unitarias', 'integracion', 'http', 'todas'];

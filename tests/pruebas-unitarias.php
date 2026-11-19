@@ -2,86 +2,81 @@
 
 /**
  * Pruebas unitarias: no requieren base de datos ni servidor web.
+ * Los identificadores AC-xx remiten a los casos de aceptación de la
+ * especificación 1.3 (sección 11.1).
  */
 
 declare(strict_types=1);
 
 return static function (MarcoPruebas $marco): void {
-    $datosRegistroValidos = [
-        'token_csrf'               => 'x',
-        'nombres_usuario'          => '  María   José ',
-        'apellido_paterno_usuario' => 'Pérez',
-        'apellido_materno_usuario' => 'de la Garza',
-        'correo_electronico'       => '  Maria.Perez@Ejemplo.MX ',
-        'contrasena'              => 'una frase de paso bastante larga',
-        'confirmacion_contrasena' => 'una frase de paso bastante larga',
-        'tipo_integrante'         => 'ALUMNO',
+    $datosSolicitudValidos = [
+        'token_csrf'                  => 'x',
+        'nombres'                     => '  María   José ',
+        'apellido_paterno'            => 'Pérez',
+        'apellido_materno'            => 'de la Garza',
+        'tipo_integrante'             => 'ALUMNO',
+        'identificador_institucional' => ' 2026-0123 ',
+        'correo_electronico'          => '  Maria.Perez@Ejemplo.MX ',
     ];
 
-    $marco->probar('U01', 'Validación acepta un registro correcto y normaliza el correo', static function () use ($datosRegistroValidos): void {
-        $validacion = ValidadorEntrada::validarDatosRegistro($datosRegistroValidos);
-        MarcoPruebas::afirmar($validacion['valido'], 'Debería ser válido: ' . json_encode($validacion['errores']));
-        MarcoPruebas::afirmarIgual('maria.perez@ejemplo.mx', $validacion['datos']['correo_electronico'], 'Correo normalizado');
-        MarcoPruebas::afirmarIgual('María José', $validacion['datos']['nombres_usuario'], 'Espacios de nombres normalizados');
-        MarcoPruebas::afirmarIgual('de la Garza', $validacion['datos']['apellido_materno_usuario'], 'Apellido materno compuesto');
+    $marco->probar('U01', 'Solicitud de acceso: datos válidos se normalizan y no llevan contraseña ni rol', static function () use ($datosSolicitudValidos): void {
+        $validacion = ValidadorEntrada::validarDatosSolicitud($datosSolicitudValidos);
+        MarcoPruebas::afirmar($validacion['valido'], 'Debería ser válida: ' . json_encode($validacion['errores']));
+        MarcoPruebas::afirmarIgual('maria.perez@ejemplo.mx', $validacion['datos']['correo'], 'Correo normalizado');
+        MarcoPruebas::afirmarIgual('María José', $validacion['datos']['nombres'], 'Espacios de nombres normalizados');
+        MarcoPruebas::afirmarIgual('de la Garza', $validacion['datos']['apellidoMaterno'], 'Apellido materno compuesto');
+        MarcoPruebas::afirmarIgual('2026-0123', $validacion['datos']['identificador'], 'Identificador sin espacios y en mayúsculas');
+        MarcoPruebas::afirmar(!in_array('contrasena', ValidadorEntrada::CAMPOS_SOLICITUD, true), 'El formulario no tiene contraseña');
+        MarcoPruebas::afirmar(!in_array('rol_usuario', ValidadorEntrada::CAMPOS_SOLICITUD, true), 'El formulario no tiene rol');
     });
 
-    $marco->probar('U06', 'Nombre atómico: materno opcional y nombre completo de máximo 100', static function () use ($datosRegistroValidos): void {
+    $marco->probar('U06', 'Nombre atómico: materno opcional y nombre completo de máximo 100', static function () use ($datosSolicitudValidos): void {
         foreach (['', '   '] as $maternoVacio) {
-            $validacion = ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, ['apellido_materno_usuario' => $maternoVacio]));
+            $validacion = ValidadorEntrada::validarDatosSolicitud(array_merge($datosSolicitudValidos, ['apellido_materno' => $maternoVacio]));
             MarcoPruebas::afirmar($validacion['valido'], 'Materno vacío permitido: ' . json_encode($validacion['errores']));
-            MarcoPruebas::afirmarIgual(null, $validacion['datos']['apellido_materno_usuario'], 'Materno vacío se guarda como NULL');
+            MarcoPruebas::afirmarIgual(null, $validacion['datos']['apellidoMaterno'], 'Materno vacío se guarda como NULL');
         }
-        $sinMaterno = $datosRegistroValidos;
-        unset($sinMaterno['apellido_materno_usuario']);
-        MarcoPruebas::afirmar(ValidadorEntrada::validarDatosRegistro($sinMaterno)['valido'], 'Materno omitido permitido');
-
-        $nombreLargo = ['nombres_usuario' => str_repeat('a', 60), 'apellido_paterno_usuario' => str_repeat('b', 20), 'apellido_materno_usuario' => str_repeat('c', 20)];
-        $validacion = ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, $nombreLargo));
-        MarcoPruebas::afirmar(!$validacion['valido'] && isset($validacion['errores']['nombres_usuario']), '60+1+20+1+20 = 102 caracteres se rechaza');
-        $nombreLimite = ['nombres_usuario' => str_repeat('a', 58), 'apellido_paterno_usuario' => str_repeat('b', 20), 'apellido_materno_usuario' => str_repeat('c', 20)];
-        MarcoPruebas::afirmar(ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, $nombreLimite))['valido'], '58+1+20+1+20 = 100 caracteres se acepta');
-        MarcoPruebas::afirmarIgual(['nombre_usuario'], ValidadorEntrada::obtenerCamposProtegidos(['nombre_usuario' => 'X']), 'nombre_usuario (calculado) es campo protegido');
+        $nombreLargo = ['nombres' => str_repeat('a', 60), 'apellido_paterno' => str_repeat('b', 20), 'apellido_materno' => str_repeat('c', 20)];
+        $validacion = ValidadorEntrada::validarDatosSolicitud(array_merge($datosSolicitudValidos, $nombreLargo));
+        MarcoPruebas::afirmar(!$validacion['valido'] && isset($validacion['errores']['nombres']), '60+1+20+1+20 = 102 caracteres se rechaza');
+        $nombreLimite = ['nombres' => str_repeat('a', 58), 'apellido_paterno' => str_repeat('b', 20), 'apellido_materno' => str_repeat('c', 20)];
+        MarcoPruebas::afirmar(ValidadorEntrada::validarDatosSolicitud(array_merge($datosSolicitudValidos, $nombreLimite))['valido'], '58+1+20+1+20 = 100 caracteres se acepta');
     });
 
-    $marco->probar('P04', 'Rechazo de campos inválidos en el registro', static function () use ($datosRegistroValidos): void {
+    $marco->probar('P04', 'Solicitud: rechazo de campos inválidos (incluido tipo ADMINISTRADOR)', static function () use ($datosSolicitudValidos): void {
         $casosInvalidos = [
-            'nombres vacíos'           => ['nombres_usuario' => '', 'campo' => 'nombres_usuario'],
-            'nombres con etiquetas'    => ['nombres_usuario' => '<script>alert(1)</script>', 'campo' => 'nombres_usuario'],
-            'nombres de 61 caracteres' => ['nombres_usuario' => str_repeat('a', 61), 'campo' => 'nombres_usuario'],
-            'paterno vacío'            => ['apellido_paterno_usuario' => '   ', 'campo' => 'apellido_paterno_usuario'],
-            'paterno de 1 carácter'    => ['apellido_paterno_usuario' => 'P', 'campo' => 'apellido_paterno_usuario'],
-            'paterno de 51 caracteres' => ['apellido_paterno_usuario' => str_repeat('p', 51), 'campo' => 'apellido_paterno_usuario'],
-            'paterno con números'      => ['apellido_paterno_usuario' => 'Pérez2', 'campo' => 'apellido_paterno_usuario'],
-            'materno con etiquetas'    => ['apellido_materno_usuario' => '<b>x</b>', 'campo' => 'apellido_materno_usuario'],
-            'materno como arreglo'     => ['apellido_materno_usuario' => ['a'], 'campo' => 'apellido_materno_usuario'],
-            'correo sin arroba'        => ['correo_electronico' => 'correo-invalido', 'campo' => 'correo_electronico'],
-            'correo de 151 caracteres' => ['correo_electronico' => str_repeat('a', 140) . '@ejemplo.mx', 'campo' => 'correo_electronico'],
-            'contraseña de 14'         => ['contrasena' => str_repeat('a', 14), 'confirmacion_contrasena' => str_repeat('a', 14), 'campo' => 'contrasena'],
-            'contraseña de 129'        => ['contrasena' => str_repeat('a', 129), 'confirmacion_contrasena' => str_repeat('a', 129), 'campo' => 'contrasena'],
-            'confirmación distinta'    => ['confirmacion_contrasena' => 'otra frase de paso diferente', 'campo' => 'confirmacion_contrasena'],
-            'tipo no permitido'        => ['tipo_integrante' => 'ADMINISTRADOR', 'campo' => 'tipo_integrante'],
-            'tipo en minúsculas'       => ['tipo_integrante' => 'profesor', 'campo' => 'tipo_integrante'],
-            'nombres como arreglo'     => ['nombres_usuario' => ['a', 'b'], 'campo' => 'nombres_usuario'],
-            'UTF-8 inválido'           => ['nombres_usuario' => "Ana\xC3\x28", 'campo' => 'nombres_usuario'],
+            'nombres vacíos'              => ['nombres' => '', 'campo' => 'nombres'],
+            'nombres con etiquetas'       => ['nombres' => '<script>alert(1)</script>', 'campo' => 'nombres'],
+            'nombres de 61 caracteres'    => ['nombres' => str_repeat('a', 61), 'campo' => 'nombres'],
+            'paterno de 1 carácter'       => ['apellido_paterno' => 'P', 'campo' => 'apellido_paterno'],
+            'paterno con números'         => ['apellido_paterno' => 'Pérez2', 'campo' => 'apellido_paterno'],
+            'materno como arreglo'        => ['apellido_materno' => ['a'], 'campo' => 'apellido_materno'],
+            'correo sin arroba'           => ['correo_electronico' => 'correo-invalido', 'campo' => 'correo_electronico'],
+            'correo de 151 caracteres'    => ['correo_electronico' => str_repeat('a', 140) . '@ejemplo.mx', 'campo' => 'correo_electronico'],
+            'tipo ADMINISTRADOR'          => ['tipo_integrante' => 'ADMINISTRADOR', 'campo' => 'tipo_integrante'],
+            'tipo en minúsculas'          => ['tipo_integrante' => 'profesor', 'campo' => 'tipo_integrante'],
+            'identificador vacío'         => ['identificador_institucional' => '  ', 'campo' => 'identificador_institucional'],
+            'identificador de 3'          => ['identificador_institucional' => 'A12', 'campo' => 'identificador_institucional'],
+            'identificador de 21'         => ['identificador_institucional' => str_repeat('9', 21), 'campo' => 'identificador_institucional'],
+            'identificador con comillas'  => ['identificador_institucional' => "12'34", 'campo' => 'identificador_institucional'],
+            'UTF-8 inválido'              => ['nombres' => "Ana\xC3\x28", 'campo' => 'nombres'],
         ];
         foreach ($casosInvalidos as $nombreCaso => $caso) {
             $campoEsperado = $caso['campo'];
             unset($caso['campo']);
-            $validacion = ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, $caso));
+            $validacion = ValidadorEntrada::validarDatosSolicitud(array_merge($datosSolicitudValidos, $caso));
             MarcoPruebas::afirmar(!$validacion['valido'], "Caso '{$nombreCaso}' debió rechazarse");
             MarcoPruebas::afirmar(isset($validacion['errores'][$campoEsperado]), "Caso '{$nombreCaso}' debió marcar {$campoEsperado}");
         }
-        $sinTipo = $datosRegistroValidos;
-        unset($sinTipo['tipo_integrante']);
-        MarcoPruebas::afirmar(!ValidadorEntrada::validarDatosRegistro($sinTipo)['valido'], 'Falta tipo_integrante');
     });
 
-    $marco->probar('U02', 'Detección de parámetros inesperados y campos protegidos', static function () use ($datosRegistroValidos): void {
-        $datosManipulados = $datosRegistroValidos + ['rol_usuario' => 'ADMINISTRADOR_PRINCIPAL', 'campo_extra' => '1'];
-        $inesperados = ValidadorEntrada::obtenerParametrosInesperados($datosManipulados, ValidadorEntrada::CAMPOS_REGISTRO);
-        MarcoPruebas::afirmarIgual(['rol_usuario', 'campo_extra'], $inesperados, 'Parámetros inesperados');
-        MarcoPruebas::afirmarIgual(['rol_usuario'], ValidadorEntrada::obtenerCamposProtegidos($datosManipulados), 'Campos protegidos');
+    $marco->probar('U02', 'AC-02: campos internos enviados desde el navegador se detectan como manipulación', static function () use ($datosSolicitudValidos): void {
+        $datosManipulados = $datosSolicitudValidos + ['rol_usuario' => 'ADMINISTRADOR_PRINCIPAL', 'estado_cuenta_usuario' => 'ACTIVA', 'id_usuario_revisor' => '1', 'campo_extra' => '1'];
+        $inesperados = ValidadorEntrada::obtenerParametrosInesperados($datosManipulados, ValidadorEntrada::CAMPOS_SOLICITUD);
+        MarcoPruebas::afirmarIgual(['rol_usuario', 'estado_cuenta_usuario', 'id_usuario_revisor', 'campo_extra'], $inesperados, 'Parámetros inesperados');
+        MarcoPruebas::afirmarIgual(['rol_usuario', 'estado_cuenta_usuario', 'id_usuario_revisor'], ValidadorEntrada::obtenerCamposProtegidos($datosManipulados, ValidadorEntrada::CAMPOS_SOLICITUD), 'Campos protegidos');
+        MarcoPruebas::afirmarIgual([], ValidadorEntrada::obtenerCamposProtegidos(['contrasena' => 'x'], ValidadorEntrada::CAMPOS_LOGIN), 'La contraseña es legítima en el login');
+        MarcoPruebas::afirmarIgual(['contrasena'], ValidadorEntrada::obtenerCamposProtegidos(['contrasena' => 'x'], ValidadorEntrada::CAMPOS_SOLICITUD), 'Pero no en la solicitud');
     });
 
     $marco->probar('P05a', 'Hash con Argon2id, salado y verificable (sin texto claro)', static function (): void {
@@ -121,11 +116,12 @@ return static function (MarcoPruebas $marco): void {
         );
     });
 
-    $marco->probar('U03', 'Prevención de redirección abierta', static function (): void {
-        foreach (['/', '/inicio', '/admin/usuarios'] as $rutaSegura) {
+    $marco->probar('U03', 'Prevención de redirección abierta (con consulta interna permitida)', static function (): void {
+        foreach (['/', '/inicio', '/admin/usuarios', '/admin/solicitudes/detalle?id=5'] as $rutaSegura) {
             MarcoPruebas::afirmar(Respuesta::esRutaInternaSegura($rutaSegura), "Debe aceptar {$rutaSegura}");
         }
-        foreach (['//evil.example', '/\\evil.example', 'https://evil.example', 'javascript:alert(1)', "/inicio\r\nSet-Cookie: x=1", 'inicio', ''] as $rutaPeligrosa) {
+        foreach (['//evil.example', '/\\evil.example', 'https://evil.example', 'javascript:alert(1)', "/inicio\r\nSet-Cookie: x=1",
+                  'inicio', '', '/a?x=<script>', '/a?url=https://evil.example', '/a#frag'] as $rutaPeligrosa) {
             MarcoPruebas::afirmar(!Respuesta::esRutaInternaSegura($rutaPeligrosa), 'Debe rechazar ' . json_encode($rutaPeligrosa));
         }
         MarcoPruebas::afirmarIgual('/', Respuesta::redireccion('//evil.example')->rutaRedireccion, 'Redirección externa se sustituye por /');
@@ -158,45 +154,55 @@ return static function (MarcoPruebas $marco): void {
         }
     });
 
-    $marco->probar('U04','Matriz RBAC: denegación por defecto y separación de roles', static function (): void {
+    $marco->probar('U04', 'Matriz RBAC 1.3: denegación por defecto y separación de roles', static function (): void {
         $auditoriaFalsa = (new ReflectionClass(AuditoriaModel::class))->newInstanceWithoutConstructor();
         $roleMiddleware = new RoleMiddleware(require RUTA_RAIZ . '/config/permisos.php', $auditoriaFalsa);
         $casos = [
-            [null, 'registrarse', true], [null, 'administrar_perfil_propio', false],
-            ['USUARIO', 'enviar_propuesta', true], ['USUARIO', 'administrar_cuentas', false],
-            ['USUARIO', 'asignar_rol_administrativo', false], ['USUARIO', 'registrarse', false],
-            ['ADMINISTRADOR', 'administrar_cuentas', true], ['ADMINISTRADOR', 'asignar_rol_administrativo', false],
-            ['ADMINISTRADOR_PRINCIPAL', 'asignar_rol_administrativo', true],
-            ['ADMINISTRADOR_PRINCIPAL', 'permiso_inexistente', false],
-            ['PROFESOR', 'enviar_propuesta', false], ['INVITADO', 'administrar_cuentas', false],
-            ['SUPERUSUARIO', 'leer_publicaciones', false],
+            [null, 'solicitar_acceso', true], [null, 'administrar_perfil_propio', false], [null, 'revisar_solicitudes', false],
+            ['USUARIO', 'solicitar_acceso', false], ['USUARIO', 'revisar_solicitudes', false], ['USUARIO', 'resolver_solicitud', false],
+            ['USUARIO', 'gestionar_estado_cuenta', false], ['USUARIO', 'consultar_bitacora', false], ['USUARIO', 'asignar_rol_administrativo', false],
+            ['ADMINISTRADOR', 'revisar_solicitudes', true], ['ADMINISTRADOR', 'resolver_solicitud', true],
+            ['ADMINISTRADOR', 'gestionar_estado_cuenta', true], ['ADMINISTRADOR', 'consultar_bitacora', true],
+            ['ADMINISTRADOR', 'asignar_rol_administrativo', false],
+            ['ADMINISTRADOR_PRINCIPAL', 'asignar_rol_administrativo', true], ['ADMINISTRADOR_PRINCIPAL', 'permiso_inexistente', false],
+            ['PROFESOR', 'enviar_propuesta', false], ['INVITADO', 'administrar_cuentas', false], ['SUPERUSUARIO', 'leer_publicaciones', false],
+            [null, 'registrarse', false],
         ];
         foreach ($casos as [$rol, $permiso, $esperado]) {
             MarcoPruebas::afirmarIgual($esperado, $roleMiddleware->tienePermiso($rol, $permiso), "tienePermiso({$rol}, {$permiso})");
         }
     });
-    $marco->probar('U07', 'Lista de bloqueo: rechaza contraseñas comunes y predecibles, acepta frases', static function () use ($datosRegistroValidos): void {
+
+    $marco->probar('U07', 'AC-10/AC-11: lista de bloqueo rechaza contraseñas comunes de 15+ y acepta frases', static function (): void {
         $contrasenasDebiles = [
             '123456789012345', '987654321098765', 'abcdefghijklmnopq', 'aaaaaaaaaaaaaaa',
             '121212121212121', 'passwordpassword', 'Contraseña Segura 123', 'contrasenasegura123',
             'Universidad del Mar 2026', 'UMAR Puerto Escondido', 'holaholaholahola', 'qwertyuiopasdfghjkl',
-            '!!!!!!!!!!!!!!!!', str_repeat('xk7 ', 32),
+            '!!!!!!!!!!!!!!!!', str_repeat('xk7 ', 32), 'qwertyuiopasdfg', 'inteligencia artificial',
         ];
         foreach ($contrasenasDebiles as $contrasenaDebil) {
             MarcoPruebas::afirmar(ListaBloqueoContrasenas::esContrasenaDebil($contrasenaDebil), "Debe rechazarse: {$contrasenaDebil}");
-            $validacion = ValidadorEntrada::validarDatosRegistro(array_merge($datosRegistroValidos, [
-                'contrasena' => $contrasenaDebil, 'confirmacion_contrasena' => $contrasenaDebil,
-            ]));
-            MarcoPruebas::afirmar(!$validacion['valido'] && isset($validacion['errores']['contrasena']), "Registro rechazado: {$contrasenaDebil}");
+            MarcoPruebas::afirmarIgual(PoliticaContrasenas::MENSAJE_BLOQUEADA, PoliticaContrasenas::validarNuevaContrasena($contrasenaDebil), "Política: {$contrasenaDebil}");
         }
         $contrasenasValidas = [
             'una frase de paso bastante larga', 'mi password favorito es el mar azul',
-            'El café de Puerto Escondido sabe mejor',
+            'El café de Puerto Escondido sabe mejor', '482915736048271',
         ];
         foreach ($contrasenasValidas as $contrasenaValida) {
-            MarcoPruebas::afirmar(!ListaBloqueoContrasenas::esContrasenaDebil($contrasenaValida), "Debe aceptarse: {$contrasenaValida}");
+            MarcoPruebas::afirmarIgual(null, PoliticaContrasenas::validarNuevaContrasena($contrasenaValida), "Debe aceptarse sin exigir símbolos: {$contrasenaValida}");
         }
         MarcoPruebas::afirmarIgual('contrasenasegura123', ListaBloqueoContrasenas::normalizar('Contraseña Segura-123'), 'Normalización solo para comparar');
+        MarcoPruebas::afirmar(PoliticaContrasenas::validarNuevaContrasena(str_repeat('a', 14)) !== null, '14 caracteres se rechaza');
+        MarcoPruebas::afirmar(PoliticaContrasenas::validarNuevaContrasena(str_repeat('ab3 ', 33)) !== null, '132 caracteres se rechaza');
+    });
+
+    $marco->probar('U15', 'La contraseña no puede contener el nombre, el correo ni la matrícula de la cuenta', static function (): void {
+        $datosCuenta = ['ana.lopez@ejemplo.mx', 'Ana', 'López', null, 'A2026001'];
+        foreach (['soy ana.lopez y me gusta el mar', 'mi matricula es A2026001 ok', 'la familia lopez camina al mar'] as $contrasena) {
+            MarcoPruebas::afirmarIgual(PoliticaContrasenas::MENSAJE_DATOS_PERSONALES, PoliticaContrasenas::validarNuevaContrasena($contrasena, $datosCuenta), "Rechaza datos personales: {$contrasena}");
+        }
+        MarcoPruebas::afirmarIgual(null, PoliticaContrasenas::validarNuevaContrasena('caminata por la playa ejemplo', $datosCuenta), 'El dominio del correo no cuenta como dato personal');
+        MarcoPruebas::afirmarIgual(null, PoliticaContrasenas::validarNuevaContrasena('una banana madura y dulce', $datosCuenta), 'Un nombre de 3 letras ("Ana") no bloquea frases');
     });
 
     $marco->probar('U08', 'Login: indica qué campo falta y conserva el correo escrito', static function (): void {
@@ -208,8 +214,8 @@ return static function (MarcoPruebas $marco): void {
         MarcoPruebas::afirmarIgual(['contrasena'], array_keys($soloCorreo['errores']), 'Solo se pide la contraseña');
         MarcoPruebas::afirmarIgual('ana@ejemplo.mx', $soloCorreo['correoPrevio'], 'El correo escrito se conserva');
 
-        $vacio = ValidadorEntrada::validarDatosLogin([]);
-        MarcoPruebas::afirmarIgual(['correo_electronico', 'contrasena'], array_keys($vacio['errores']), 'Ambos campos vacíos');
+        $formatoMalo = ValidadorEntrada::validarDatosLogin(['correo_electronico' => 'ana-sin-arroba', 'contrasena' => 'x']);
+        MarcoPruebas::afirmarIgual(['correo_electronico'], array_keys($formatoMalo['errores']), 'Formato de correo revisado');
 
         $completo = ValidadorEntrada::validarDatosLogin(['correo_electronico' => ' Ana@Ejemplo.MX ', 'contrasena' => ' clave ']);
         MarcoPruebas::afirmar($completo['valido'], 'Datos completos');
@@ -224,6 +230,7 @@ return static function (MarcoPruebas $marco): void {
         }
         Configuracion::definirValores(['SESION_INACTIVIDAD_SEGUNDOS' => '']);
     });
+
     $marco->probar('U10', 'Laboratorio E8: la consulta concatenada se altera y la preparada no', static function (): void {
         require_once RUTA_RAIZ . '/laboratorio/inyeccion-sql/LaboratorioInyeccionSql.php';
         if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
@@ -243,5 +250,73 @@ return static function (MarcoPruebas $marco): void {
         MarcoPruebas::afirmarIgual(0, $resultados['E8-P03']['segura']['filas'], 'La preparada no devuelve filas');
         MarcoPruebas::afirmar($resultados['E8-P03b']['vulnerable']['acceso'], 'UNION concede acceso en la vulnerable');
         MarcoPruebas::afirmar(!$resultados['E8-P03b']['segura']['acceso'], 'UNION no concede acceso en la preparada');
+    });
+
+    $marco->probar('U11', 'Tokens de enlace: 256 bits, base64url, solo se guarda su SHA-256', static function (): void {
+        $tokens = [];
+        for ($indice = 0; $indice < 50; $indice++) {
+            $token = GeneradorTokens::generarToken();
+            MarcoPruebas::afirmar(GeneradorTokens::esFormatoValido($token), "Formato válido: {$token}");
+            $tokens[$token] = true;
+        }
+        MarcoPruebas::afirmarIgual(50, count($tokens), 'Sin repeticiones');
+        $token = array_key_first($tokens);
+        $hash = GeneradorTokens::calcularHashToken($token);
+        MarcoPruebas::afirmar(preg_match('/^[a-f0-9]{64}$/', $hash) === 1 && !str_contains($hash, $token), 'Hash SHA-256 distinto del token');
+        foreach ([null, '', 'corto', str_repeat('a', 44), str_repeat('a', 42) . '=', ['x'], "../../etc/passwd" . str_repeat('a', 27)] as $tokenFalso) {
+            MarcoPruebas::afirmar(!GeneradorTokens::esFormatoValido($tokenFalso), 'Rechaza ' . json_encode($tokenFalso));
+        }
+    });
+
+    $marco->probar('U12', 'TOTP: vectores oficiales RFC 6238, tolerancia de ±30 s y sin reutilizar códigos', static function (): void {
+        $secretoRfc = '12345678901234567890';
+        foreach ([59 => '94287082', 1111111109 => '07081804', 1234567890 => '89005924', 2000000000 => '69279037'] as $momento => $codigoEsperado) {
+            MarcoPruebas::afirmarIgual($codigoEsperado, SegundoFactorTotp::calcularCodigo($secretoRfc, intdiv($momento, 30), 8), "RFC 6238 t={$momento}");
+        }
+        $secretoBase32 = SegundoFactorTotp::codificarBase32($secretoRfc);
+        MarcoPruebas::afirmarIgual('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', $secretoBase32, 'Base32 del secreto RFC');
+        MarcoPruebas::afirmarIgual($secretoRfc, SegundoFactorTotp::decodificarBase32(strtolower(SegundoFactorTotp::formatearSecreto($secretoBase32))), 'Ida y vuelta Base32');
+
+        $momento = 1_800_000_000;
+        $paso = intdiv($momento, 30);
+        $codigoActual = SegundoFactorTotp::calcularCodigo($secretoRfc, $paso);
+        MarcoPruebas::afirmarIgual($paso, SegundoFactorTotp::verificarCodigo($secretoBase32, $codigoActual, null, $momento), 'Código actual aceptado');
+        MarcoPruebas::afirmarIgual($paso, SegundoFactorTotp::verificarCodigo($secretoBase32, $codigoActual, null, $momento + 30), 'Aceptado con 30 s de desfase');
+        MarcoPruebas::afirmarIgual(null, SegundoFactorTotp::verificarCodigo($secretoBase32, $codigoActual, null, $momento + 90), 'Rechazado con 90 s de desfase');
+        MarcoPruebas::afirmarIgual(null, SegundoFactorTotp::verificarCodigo($secretoBase32, $codigoActual, $paso, $momento), 'Un código ya usado no se acepta otra vez');
+        foreach (['', '12345', '1234567', 'abcdef', '12 34 5x'] as $codigoInvalido) {
+            MarcoPruebas::afirmarIgual(null, SegundoFactorTotp::verificarCodigo($secretoBase32, $codigoInvalido, null, $momento), "Rechaza '{$codigoInvalido}'");
+        }
+        $secretoNuevo = SegundoFactorTotp::generarSecreto();
+        MarcoPruebas::afirmar(strlen($secretoNuevo) === 32 && strlen(SegundoFactorTotp::decodificarBase32($secretoNuevo)) === 20, 'Secreto nuevo de 160 bits');
+    });
+
+    $marco->probar('U13', 'Secreto del segundo factor cifrado (AES-256-GCM) y ligado a la cuenta', static function (): void {
+        $cifrador = new CifradorSecretos(bin2hex(random_bytes(32)));
+        MarcoPruebas::afirmar(CifradorSecretos::cifradoDisponible(), 'OpenSSL con AES-256-GCM disponible');
+        $cifrado = $cifrador->cifrar('JBSWY3DPEHPK3PXP', 'usuario:7');
+        MarcoPruebas::afirmar(str_starts_with($cifrado, 'v1:') && !str_contains($cifrado, 'JBSWY3DPEHPK3PXP'), 'No se guarda en claro');
+        MarcoPruebas::afirmarIgual('JBSWY3DPEHPK3PXP', $cifrador->descifrar($cifrado, 'usuario:7'), 'Se descifra con su contexto');
+        MarcoPruebas::afirmarIgual(null, $cifrador->descifrar($cifrado, 'usuario:8'), 'Copiado a otra cuenta no se descifra');
+        $alterado = substr($cifrado, 0, -2) . (str_ends_with($cifrado, 'A') ? 'BB' : 'AA');
+        MarcoPruebas::afirmarIgual(null, $cifrador->descifrar($alterado, 'usuario:7'), 'Alterado no se descifra (autenticado)');
+        $otraClave = new CifradorSecretos(bin2hex(random_bytes(32)));
+        MarcoPruebas::afirmarIgual(null, $otraClave->descifrar($cifrado, 'usuario:7'), 'Con otra CLAVE_HUELLAS no se descifra');
+        MarcoPruebas::afirmar($cifrador->calcularHuellaCodigoRecuperacion('ABCDE') !== $otraClave->calcularHuellaCodigoRecuperacion('ABCDE'), 'Huellas de códigos dependen de la clave');
+    });
+
+    $marco->probar('U14', 'Correo: enlaces solo con APP_URL_PUBLICA válida (nunca con el encabezado Host)', static function (): void {
+        $_SERVER['HTTP_HOST'] = 'atacante.example';
+        $token = GeneradorTokens::generarToken();
+        $servicio = new ServicioCorreo('buzon_pruebas', 'http://192.168.20.132/papc/', 'x@papc.invalid', sys_get_temp_dir());
+        MarcoPruebas::afirmarIgual('http://192.168.20.132/papc/activar-cuenta?token=' . $token, $servicio->construirEnlace('/activar-cuenta', $token), 'Enlace con la URL configurada');
+        foreach ([null, '', 'javascript:alert(1)', 'ftp://x.mx', 'http://x.mx/?a=1', 'no es url'] as $urlInvalida) {
+            $servicioInvalido = new ServicioCorreo('buzon_pruebas', $urlInvalida, 'x@papc.invalid', sys_get_temp_dir());
+            MarcoPruebas::afirmarIgual(null, $servicioInvalido->construirEnlace('/activar-cuenta', $token), 'Rechaza APP_URL_PUBLICA=' . json_encode($urlInvalida));
+        }
+        unset($_SERVER['HTTP_HOST']);
+        $servicioDesactivado = new ServicioCorreo('desactivado', 'http://x.mx', 'x@papc.invalid', sys_get_temp_dir());
+        MarcoPruebas::afirmar(!$servicioDesactivado->enviarRecuperacion('ana@x.mx', $token), 'Modo desconocido no finge un envío');
+        MarcoPruebas::afirmar(!$servicio->enviarRecuperacion("ana@x.mx\r\nBcc: otro@x.mx", $token), 'Inyección de encabezados rechazada');
     });
 };

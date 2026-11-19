@@ -1,12 +1,12 @@
 <?php
 /**
- * Formulario de inicio de sesión.
+ * Pantalla B: inicio de sesión (un solo formulario para todos los roles).
  *
  * Variables: correoPrevio (string), mensajeError (string|null),
  * errores (array por campo: correo_electronico, contrasena).
  *
  * La contraseña nunca se vuelve a mostrar. autocomplete permite usar
- * gestores de contraseñas (recomendación OWASP). La validación del
+ * gestores de contraseñas (WCAG 3.3.8 y OWASP). La validación del
  * navegador (validacion-formularios.js) es solo una ayuda: el servidor
  * valida de nuevo todos los datos.
  *
@@ -22,6 +22,7 @@ $errorContrasena = $errores['contrasena'] ?? '';
 
     <section class="panel-formulario">
         <h1 class="titulo-acceso">Iniciar sesión</h1>
+        <p class="subtitulo-acceso">Ingrese a su cuenta del PAPC para consultar sus solicitudes y usar las funciones autorizadas.</p>
 
         <?php if (!empty($datosVista['mensajeError'])): ?>
             <p class="mensaje mensaje-error" role="alert"><?= Vista::escapar($datosVista['mensajeError']) ?></p>
@@ -34,8 +35,7 @@ $errorContrasena = $errores['contrasena'] ?? '';
                 <label for="correo-electronico">Correo electrónico</label>
                 <input id="correo-electronico" name="correo_electronico" type="email" required
                        maxlength="<?= LONGITUD_MAXIMA_CORREO_ELECTRONICO ?>" autocomplete="username"
-                       placeholder="usuario@ejemplo.com" data-validar="requerido"
-                       data-mensaje-vacio="Escriba su correo electrónico."
+                       placeholder="usuario@ejemplo.com" data-validar="correo"
                        aria-describedby="error-correo-electronico"
                        <?= $errorCorreo !== '' ? 'aria-invalid="true"' : '' ?>
                        value="<?= Vista::escapar($datosVista['correoPrevio'] ?? '') ?>">
@@ -54,11 +54,16 @@ $errorContrasena = $errores['contrasena'] ?? '';
                     <button type="button" class="boton-mostrar" data-mostrar="contrasena" aria-controls="contrasena" aria-pressed="false" hidden>Mostrar</button>
                 </div>
                 <p class="error-campo" id="error-contrasena" aria-live="polite"><?= Vista::escapar($errorContrasena) ?></p>
+                <a class="enlace-secundario" href="<?= Vista::escapar(Vista::url('/recuperar-contrasena')) ?>">¿Olvidó su contraseña?</a>
             </div>
 
             <div class="acciones-acceso">
-                <button type="submit" class="boton-principal">Entrar</button>
-                <p class="texto-secundario">¿No tiene cuenta? <a href="<?= Vista::escapar(Vista::url('/registro')) ?>">Regístrese</a></p>
+                <button type="submit" class="boton-principal">Iniciar sesión</button>
+                <p class="texto-secundario">¿Todavía no tiene acceso? <a href="<?= Vista::escapar(Vista::url('/solicitar-acceso')) ?>">Solicitar acceso</a></p>
+                <p class="texto-secundario enlaces-pie">
+                    <a href="<?= Vista::escapar(Vista::url('/ayuda')) ?>">Ayuda</a>
+                    <a href="<?= Vista::escapar(Vista::url('/')) ?>">Volver al portal</a>
+                </p>
             </div>
         </form>
     </section>

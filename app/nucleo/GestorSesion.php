@@ -23,6 +23,14 @@ final class GestorSesion
     public const MOTIVO_DURACION_MAXIMA = 'DURACION_MAXIMA';
     public const MOTIVO_VERSION_CAMBIADA = 'PRIVILEGIOS_O_CREDENCIALES_CAMBIADOS';
     public const MOTIVO_CUENTA_INEXISTENTE = 'CUENTA_INEXISTENTE';
+    public const MOTIVO_CUENTA_NO_ACTIVA = 'CUENTA_NO_ACTIVA';
+    public const MOTIVO_SEGUNDO_FACTOR_REQUERIDO = 'SEGUNDO_FACTOR_REQUERIDO';
+
+    /** Enlaces cuyo token se guarda en la sesión para limpiar la URL. */
+    public const ENLACE_VERIFICACION = 'verificacion';
+    public const ENLACE_ACTIVACION = 'activacion';
+    public const ENLACE_RECUPERACION = 'recuperacion';
+    private const ENLACES_VALIDOS = [self::ENLACE_VERIFICACION, self::ENLACE_ACTIVACION, self::ENLACE_RECUPERACION];
 
     /** Motivo de la última expiración detectada por validarSesion(). */
     private ?string $motivoUltimaExpiracion = null;
@@ -112,9 +120,11 @@ final class GestorSesion
      * dato previo y renueva el token CSRF.
      *
      * @param array<string, mixed> $usuario Fila de usuario ya verificada.
+     * @param bool $segundoFactorCompletado true si además superó el segundo
+     *        factor (obligatorio para roles administrativos).
      * @return void
      */
-    public function crearSesion(array $usuario): void
+    public function crearSesion(array $usuario, bool $segundoFactorCompletado = false): void
     {
         self::iniciarSesionPhp();
         session_regenerate_id(true);
@@ -123,6 +133,7 @@ final class GestorSesion
         $momentoActual = time();
         $_SESSION['idUsuario'] = (int) $usuario['id_usuario'];
         $_SESSION['versionSesion'] = (int) $usuario['version_sesion_usuario'];
+        $_SESSION['segundoFactorCompletado'] = $segundoFactorCompletado;
         $_SESSION['fechaCreacion'] = $momentoActual;
         $_SESSION['ultimaActividad'] = $momentoActual;
         $_SESSION['ultimaRegeneracion'] = $momentoActual;
@@ -157,6 +168,13 @@ final class GestorSesion
                 $motivoExpiracion = self::MOTIVO_CUENTA_INEXISTENTE;
             } elseif ((int) $usuario['version_sesion_usuario'] !== (int) ($_SESSION['versionSesion'] ?? -1)) {
                 $motivoExpiracion = self::MOTIVO_VERSION_CAMBIADA;
+            } elseif ($usuario['estado_cuenta_usuario'] !== UsuarioModel::ESTADO_ACTIVA) {
+                // INVITADA, SUSPENDIDA o BAJA: no mantienen sesión (RF-08).
+                $motivoExpiracion = self::MOTIVO_CUENTA_NO_ACTIVA;
+            } elseif (in_array($usuario['rol_usuario'], UsuarioModel::ROLES_CON_SEGUNDO_FACTOR, true)
+                && ($_SESSION['segundoFactorCompletado'] ?? false) !== true) {
+                // Defensa en profundidad: una sesión administrativa sin segundo factor no se acepta.
+                $motivoExpiracion = self::MOTIVO_SEGUNDO_FACTOR_REQUERIDO;
             }
         }
 
@@ -282,6 +300,133 @@ final class GestorSesion
         $ruta = $_SESSION['rutaPendiente'] ?? null;
         unset($_SESSION['rutaPendiente']);
         return is_string($ruta) && Respuesta::esRutaInternaSegura($ruta) ? $ruta : null;
+    }
+
+    /* ----------------- Segundo factor pendiente (antes de la sesión) ----------------- */
+
+    /**
+     * Marca que la contraseña de una cuenta administrativa fue correcta pero
+     * falta el segundo factor. NO crea una sesión autenticada: hasta superar
+     * el segundo factor, la persona sigue siendo un visitante.
+     *
+     * @param array<string, mixed> $usuario Cuenta verificada por contraseña.
+     * @return void
+     */
+    public function iniciarSegundoFactorPendiente(array $usuario): void
+    {
+        self::iniciarSesionPhp();
+        session_regenerate_id(true);
+        $_SESSION = [];
+        $_SESSION['segundoFactorPendiente'] = [
+            'idUsuario'     => (int) $usuario['id_usuario'],
+            'versionSesion' => (int) $usuario['version_sesion_usuario'],
+            'momentoInicio' => time(),
+        ];
+        ProtectorCsrf::renovarTokenCsrf();
+    }
+
+    /**
+     * @return array{idUsuario: int, versionSesion: int, momentoInicio: int, secretoPropuesto?: string}|null
+     *         Datos pendientes vigentes, o null si no hay o vencieron.
+     */
+    public function obtenerSegundoFactorPendiente(): ?array
+    {
+        self::iniciarSesionPhp();
+        $pendiente = $_SESSION['segundoFactorPendiente'] ?? null;
+        if (!is_array($pendiente) || !is_int($pendiente['idUsuario'] ?? null)) {
+            return null;
+        }
+        if (time() - (int) $pendiente['momentoInicio'] > VIGENCIA_SEGUNDO_FACTOR_PENDIENTE_SEGUNDOS) {
+            $this->limpiarSegundoFactorPendiente();
+            return null;
+        }
+        return $pendiente;
+    }
+
+    /**
+     * Guarda el secreto propuesto durante la configuración inicial (aún no
+     * confirmado, por eso no va a la base de datos).
+     *
+     * @param string $secretoBase32 Secreto generado.
+     * @return void
+     */
+    public function guardarSecretoPropuesto(string $secretoBase32): void
+    {
+        if (isset($_SESSION['segundoFactorPendiente']) && is_array($_SESSION['segundoFactorPendiente'])) {
+            $_SESSION['segundoFactorPendiente']['secretoPropuesto'] = $secretoBase32;
+        }
+    }
+
+    /**
+     * @return void
+     */
+    public function limpiarSegundoFactorPendiente(): void
+    {
+        unset($_SESSION['segundoFactorPendiente']);
+    }
+
+    /* ---------------------- Tokens de enlaces y datos de un solo uso ---------------------- */
+
+    /**
+     * Guarda el token de un enlace para redirigir a una URL sin token
+     * (así no queda en el historial ni en el encabezado Referer).
+     *
+     * @param string $tipoEnlace Constante ENLACE_*.
+     * @param string $token Token con formato ya validado.
+     * @return void
+     */
+    public function guardarTokenEnlace(string $tipoEnlace, string $token): void
+    {
+        self::iniciarSesionPhp();
+        if (in_array($tipoEnlace, self::ENLACES_VALIDOS, true)) {
+            $_SESSION['tokensEnlace'][$tipoEnlace] = $token;
+        }
+    }
+
+    /**
+     * @param string $tipoEnlace Constante ENLACE_*.
+     * @return string|null Token guardado o null.
+     */
+    public function obtenerTokenEnlace(string $tipoEnlace): ?string
+    {
+        self::iniciarSesionPhp();
+        $token = $_SESSION['tokensEnlace'][$tipoEnlace] ?? null;
+        return GeneradorTokens::esFormatoValido($token) ? $token : null;
+    }
+
+    /**
+     * @param string $tipoEnlace Constante ENLACE_*.
+     * @return void
+     */
+    public function eliminarTokenEnlace(string $tipoEnlace): void
+    {
+        unset($_SESSION['tokensEnlace'][$tipoEnlace]);
+    }
+
+    /**
+     * Guarda un dato que se mostrará UNA sola vez (p. ej. códigos de
+     * recuperación recién generados).
+     *
+     * @param string $clave Nombre del dato.
+     * @param mixed $valor Valor.
+     * @return void
+     */
+    public function guardarDatoUnaVez(string $clave, mixed $valor): void
+    {
+        self::iniciarSesionPhp();
+        $_SESSION['datosUnaVez'][$clave] = $valor;
+    }
+
+    /**
+     * @param string $clave Nombre del dato.
+     * @return mixed Valor o null; se elimina al leerlo.
+     */
+    public function extraerDatoUnaVez(string $clave): mixed
+    {
+        self::iniciarSesionPhp();
+        $valor = $_SESSION['datosUnaVez'][$clave] ?? null;
+        unset($_SESSION['datosUnaVez'][$clave]);
+        return $valor;
     }
 
     /**

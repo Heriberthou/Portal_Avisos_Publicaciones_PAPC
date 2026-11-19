@@ -8,6 +8,10 @@ storage/logs/*
 storage/sesiones/*
 !storage/sesiones/.gitkeep
 !storage/sesiones/.htaccess
+# Buzón de pruebas: los mensajes contienen enlaces de un solo uso
+storage/correos/*
+!storage/correos/.gitkeep
+!storage/correos/.htaccess
 
 # Paquetes generados para instalar en el servidor
 dist/

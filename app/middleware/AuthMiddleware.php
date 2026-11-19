@@ -17,6 +17,9 @@ final class AuthMiddleware
         GestorSesion::MOTIVO_DURACION_MAXIMA    => 'Su sesión llegó a su tiempo máximo. Inicie sesión de nuevo.',
         GestorSesion::MOTIVO_VERSION_CAMBIADA   => 'Sus permisos o su contraseña cambiaron. Inicie sesión de nuevo.',
         GestorSesion::MOTIVO_CUENTA_INEXISTENTE => 'Su sesión ya no es válida. Inicie sesión de nuevo.',
+        // Cuenta suspendida o dada de baja: mismo texto genérico (no se revela el estado).
+        GestorSesion::MOTIVO_CUENTA_NO_ACTIVA   => 'Su sesión ya no es válida. Inicie sesión de nuevo.',
+        GestorSesion::MOTIVO_SEGUNDO_FACTOR_REQUERIDO => 'Su sesión ya no es válida. Inicie sesión de nuevo.',
     ];
 
     /**

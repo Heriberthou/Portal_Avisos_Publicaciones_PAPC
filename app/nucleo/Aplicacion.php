@@ -19,37 +19,55 @@ final class Aplicacion
      * Crea todos los objetos del módulo compartiendo una sola conexión.
      *
      * @param PDO $conexion Conexión de obtenerConexionBaseDatos().
-     * @return array{
-     *   usuarioModel: UsuarioModel, auditoriaModel: AuditoriaModel,
-     *   gestorSesion: GestorSesion, authMiddleware: AuthMiddleware,
-     *   roleMiddleware: RoleMiddleware, servicioAutenticacion: ServicioAutenticacion,
-     *   servicioAdministracion: ServicioAdministracionUsuarios,
-     *   authController: AuthController, adminUsuarioController: AdminUsuarioController
-     * }
+     * @param ServicioCorreo|null $servicioCorreo Inyectable en pruebas; por
+     *        omisión se configura desde el .env.
+     * @return array<string, object> Modelos, servicios, middleware y controladores.
      */
-    public static function construirDependencias(PDO $conexion): array
+    public static function construirDependencias(PDO $conexion, ?ServicioCorreo $servicioCorreo = null): array
     {
+        $claveHuellas = Configuracion::obtenerObligatorio('CLAVE_HUELLAS');
+        $servicioCorreo ??= ServicioCorreo::desdeConfiguracion();
+
         $usuarioModel = new UsuarioModel($conexion);
         $auditoriaModel = new AuditoriaModel($conexion);
+        $solicitudAccesoModel = new SolicitudAccesoModel($conexion);
+        $tokenSolicitudModel = new TokenSolicitudModel($conexion);
+        $tokenCuentaModel = new TokenCuentaModel($conexion);
+        $codigoRecuperacionModel = new CodigoRecuperacionMfaModel($conexion);
+
         $gestorSesion = new GestorSesion($usuarioModel);
         $roleMiddleware = new RoleMiddleware(require RUTA_RAIZ . '/config/permisos.php', $auditoriaModel);
-        $limitadorIntentos = new LimitadorIntentos(
-            new IntentoAccesoModel($conexion),
-            Configuracion::obtenerObligatorio('CLAVE_HUELLAS')
-        );
+        $limitadorIntentos = new LimitadorIntentos(new IntentoAccesoModel($conexion), $claveHuellas);
+        $cifradorSecretos = new CifradorSecretos($claveHuellas);
+
         $servicioAutenticacion = new ServicioAutenticacion($usuarioModel, $auditoriaModel, $limitadorIntentos, $gestorSesion);
-        $servicioAdministracion = new ServicioAdministracionUsuarios($conexion, $usuarioModel, $auditoriaModel, $roleMiddleware);
+        $servicioSegundoFactor = new ServicioSegundoFactor($conexion, $usuarioModel, $codigoRecuperacionModel, $auditoriaModel, $limitadorIntentos, $gestorSesion, $cifradorSecretos);
+        $servicioSolicitudAcceso = new ServicioSolicitudAcceso($conexion, $solicitudAccesoModel, $tokenSolicitudModel, $usuarioModel, $tokenCuentaModel, $auditoriaModel, $limitadorIntentos, $servicioCorreo, $roleMiddleware);
+        $servicioCredenciales = new ServicioCredenciales($conexion, $usuarioModel, $tokenCuentaModel, $auditoriaModel, $limitadorIntentos, $servicioCorreo);
+        $servicioAdministracion = new ServicioAdministracionUsuarios($conexion, $usuarioModel, $auditoriaModel, $roleMiddleware, $tokenCuentaModel, $codigoRecuperacionModel);
 
         return [
-            'usuarioModel'           => $usuarioModel,
-            'auditoriaModel'         => $auditoriaModel,
-            'gestorSesion'           => $gestorSesion,
-            'authMiddleware'         => new AuthMiddleware($gestorSesion, $auditoriaModel),
-            'roleMiddleware'         => $roleMiddleware,
-            'servicioAutenticacion'  => $servicioAutenticacion,
-            'servicioAdministracion' => $servicioAdministracion,
-            'authController'         => new AuthController($servicioAutenticacion, $gestorSesion, $auditoriaModel, $roleMiddleware),
-            'adminUsuarioController' => new AdminUsuarioController($servicioAdministracion, $usuarioModel, $gestorSesion, $roleMiddleware),
+            'usuarioModel'            => $usuarioModel,
+            'auditoriaModel'          => $auditoriaModel,
+            'solicitudAccesoModel'    => $solicitudAccesoModel,
+            'tokenCuentaModel'        => $tokenCuentaModel,
+            'gestorSesion'            => $gestorSesion,
+            'authMiddleware'          => new AuthMiddleware($gestorSesion, $auditoriaModel),
+            'roleMiddleware'          => $roleMiddleware,
+            'servicioCorreo'          => $servicioCorreo,
+            'servicioAutenticacion'   => $servicioAutenticacion,
+            'servicioSegundoFactor'   => $servicioSegundoFactor,
+            'servicioSolicitudAcceso' => $servicioSolicitudAcceso,
+            'servicioCredenciales'    => $servicioCredenciales,
+            'servicioAdministracion'  => $servicioAdministracion,
+            'portalController'        => new PortalController($gestorSesion),
+            'authController'          => new AuthController($servicioAutenticacion, $gestorSesion, $auditoriaModel, $roleMiddleware),
+            'segundoFactorController' => new SegundoFactorController($servicioSegundoFactor, $gestorSesion),
+            'solicitudAccesoController' => new SolicitudAccesoController($servicioSolicitudAcceso, $gestorSesion, $auditoriaModel),
+            'activacionController'    => new ActivacionController($servicioCredenciales, $gestorSesion),
+            'recuperacionController'  => new RecuperacionController($servicioCredenciales, $gestorSesion),
+            'administracionSolicitudesController' => new AdministracionSolicitudesController($servicioSolicitudAcceso, $solicitudAccesoModel, $usuarioModel, $gestorSesion),
+            'adminUsuarioController'  => new AdminUsuarioController($servicioAdministracion, $usuarioModel, $auditoriaModel, $gestorSesion, $roleMiddleware),
         ];
     }
 

@@ -3,20 +3,25 @@
 declare(strict_types=1);
 
 /**
- * Controlador de registro, inicio y cierre de sesión.
+ * Inicio y cierre de sesión, y pantalla de destino por rol (pantallas B e I
+ * de la especificación 1.3).
  *
- * Responsabilidad: traducir la solicitud HTTP (campos de formulario) a
- * llamadas a ServicioAutenticacion y elegir la respuesta (vista o
- * redirección). Las reglas de seguridad viven en el servicio y en los
- * middleware; aquí solo se aplica la lista blanca de campos.
+ * Un solo formulario para todos: el servidor decide el destino según el
+ * rol leído de la base de datos. Las cuentas administrativas pasan antes
+ * por el segundo factor (SegundoFactorController).
  *
  * Cuando una acción se ejecuta, el enrutador ya comprobó método HTTP,
  * autenticación/estado de invitado, permiso RBAC y token CSRF.
  */
 final class AuthController
 {
-    /** Mensaje único para cualquier fallo de credenciales (sin enumeración). */
-    private const MENSAJE_CREDENCIALES_INVALIDAS = 'Correo electrónico o contraseña incorrectos.';
+    use ControlFormulario;
+
+    /** Mensaje único para cualquier fallo de credenciales o de estado (sin enumeración). */
+    private const MENSAJE_CREDENCIALES_INVALIDAS = 'No fue posible iniciar sesión. Verifique los datos e intente de nuevo.';
+
+    /** Mensaje cuando se alcanza el límite de intentos. */
+    private const MENSAJE_LIMITE = 'Por seguridad, espere unos minutos antes de volver a intentarlo o use "¿Olvidó su contraseña?".';
 
     /**
      * @param ServicioAutenticacion $servicioAutenticacion Reglas de autenticación.
@@ -54,7 +59,7 @@ final class AuthController
      */
     public function procesarLogin(?array $usuarioActual, array $datosFormulario): Respuesta
     {
-        $this->rechazarParametrosInesperados($datosFormulario, ValidadorEntrada::CAMPOS_LOGIN, 'login');
+        $this->exigirCamposPermitidos($datosFormulario, ValidadorEntrada::CAMPOS_LOGIN, 'login', $this->auditoriaModel);
 
         $validacion = ValidadorEntrada::validarDatosLogin($datosFormulario);
         if (!$validacion['valido']) {
@@ -72,72 +77,12 @@ final class AuthController
         );
 
         return match ($resultado) {
-            ServicioAutenticacion::RESULTADO_EXITO => $this->redirigirConMensaje(
-                $rutaPendiente ?? '/inicio',
-                'exito',
-                'Sesión iniciada correctamente.'
-            ),
-            ServicioAutenticacion::RESULTADO_LIMITE_ALCANZADO => $this->vistaLogin(
-                $correoElectronico,
-                'Demasiados intentos fallidos. Espere unos minutos e intente de nuevo.',
-                429
-            ),
+            ServicioAutenticacion::RESULTADO_EXITO => $this->redirigirConMensaje($rutaPendiente ?? '/inicio', 'exito', 'Sesión iniciada correctamente.'),
+            ServicioAutenticacion::RESULTADO_REQUIERE_SEGUNDO_FACTOR => Respuesta::redireccion('/verificar-segundo-factor'),
+            ServicioAutenticacion::RESULTADO_REQUIERE_CONFIGURAR_SEGUNDO_FACTOR => Respuesta::redireccion('/configurar-segundo-factor'),
+            ServicioAutenticacion::RESULTADO_LIMITE_ALCANZADO => $this->vistaLogin($correoElectronico, self::MENSAJE_LIMITE, 429),
             default => $this->vistaLogin($correoElectronico, self::MENSAJE_CREDENCIALES_INVALIDAS, 401),
         };
-    }
-
-    /**
-     * GET /registro
-     *
-     * @param array<string, mixed>|null $usuarioActual Siempre null (ruta de invitado).
-     * @param array<mixed> $datosFormulario Parámetros GET (no se usan).
-     * @return Respuesta Formulario de registro.
-     */
-    public function mostrarFormularioRegistro(?array $usuarioActual, array $datosFormulario): Respuesta
-    {
-        return $this->vistaRegistro([], [], null, 200);
-    }
-
-    /**
-     * POST /registro
-     *
-     * El rol NO se lee del formulario: siempre es USUARIO. Si el formulario
-     * trae campos internos (rol_usuario, estado_verificacion_usuario...), se
-     * trata como intento de escalada: se audita y se rechaza completo.
-     *
-     * @param array<string, mixed>|null $usuarioActual Siempre null (ruta de invitado).
-     * @param array<mixed> $datosFormulario Campos del formulario.
-     * @return Respuesta Redirección al login o formulario con errores.
-     * @throws ExcepcionHttp 400 ante campos no permitidos.
-     */
-    public function procesarRegistro(?array $usuarioActual, array $datosFormulario): Respuesta
-    {
-        $this->rechazarParametrosInesperados($datosFormulario, ValidadorEntrada::CAMPOS_REGISTRO, 'registro');
-
-        $validacion = ValidadorEntrada::validarDatosRegistro($datosFormulario);
-        $valoresPrevios = [];
-        foreach (['nombres_usuario', 'apellido_paterno_usuario', 'apellido_materno_usuario', 'correo_electronico', 'tipo_integrante'] as $campo) {
-            $valoresPrevios[$campo] = ValidadorEntrada::obtenerTexto($datosFormulario, $campo) ?? '';
-        }
-        if (!$validacion['valido']) {
-            return $this->vistaRegistro($valoresPrevios, $validacion['errores'], null, 422);
-        }
-
-        $resultado = $this->servicioAutenticacion->registrarUsuario($validacion['datos']);
-        if (!$resultado['exito']) {
-            return $this->vistaRegistro(
-                $valoresPrevios,
-                [],
-                'No fue posible crear la cuenta con esos datos. Si ya tiene una cuenta, inicie sesión.',
-                409
-            );
-        }
-
-        $mensaje = 'Cuenta creada. Ya puede iniciar sesión.';
-        if ($validacion['datos']['tipo_integrante'] === UsuarioModel::TIPO_PROFESOR) {
-            $mensaje .= ' Su registro como profesor está pendiente de verificación. Mientras tanto, su cuenta funciona igual que la de cualquier usuario.';
-        }
-        return $this->redirigirConMensaje('/iniciar-sesion', 'exito', $mensaje);
     }
 
     /**
@@ -154,7 +99,11 @@ final class AuthController
     }
 
     /**
-     * GET /inicio — página mínima para usuarios autenticados (no es un dashboard).
+     * GET /inicio — pantalla I: destino según el rol (demostrativa).
+     *
+     * Muestra datos NO sensibles: nombre, tipo, rol y estado; el
+     * identificador institucional va enmascarado. Las opciones visibles
+     * dependen del rol, pero la barrera real es el servidor (RBAC).
      *
      * @param array<string, mixed>|null $usuarioActual Usuario autenticado.
      * @param array<mixed> $datosFormulario Parámetros GET (no se usan).
@@ -162,42 +111,17 @@ final class AuthController
      */
     public function mostrarInicio(?array $usuarioActual, array $datosFormulario): Respuesta
     {
+        $rol = (string) $usuarioActual['rol_usuario'];
         return Respuesta::vista('inicio', [
-            'tituloPagina'         => 'Inicio',
-            'usuarioActual'        => $usuarioActual,
-            'mensajes'             => $this->gestorSesion->extraerMensajesFlash(),
-            'puedeAdministrar'     => $this->roleMiddleware->tienePermiso((string) $usuarioActual['rol_usuario'], 'administrar_cuentas'),
-            'minutosInactividad'   => intdiv(GestorSesion::obtenerTiempoInactividadSegundos() + 59, 60),
+            'tituloPagina'            => 'Inicio',
+            'usuarioActual'           => $usuarioActual,
+            'mensajes'                => $this->gestorSesion->extraerMensajesFlash(),
+            'puedeRevisarSolicitudes' => $this->roleMiddleware->tienePermiso($rol, 'revisar_solicitudes'),
+            'puedeAdministrar'        => $this->roleMiddleware->tienePermiso($rol, 'administrar_cuentas'),
+            'puedeConsultarBitacora'  => $this->roleMiddleware->tienePermiso($rol, 'consultar_bitacora'),
+            'puedeAsignarRoles'       => $this->roleMiddleware->tienePermiso($rol, 'asignar_rol_administrativo'),
+            'minutosInactividad'      => intdiv(GestorSesion::obtenerTiempoInactividadSegundos() + 59, 60),
         ]);
-    }
-
-    /**
-     * Rechaza cualquier campo fuera de la lista blanca del formulario y
-     * audita si entre ellos hay campos internos protegidos.
-     *
-     * @param array<mixed> $datosFormulario Campos recibidos.
-     * @param list<string> $camposPermitidos Lista blanca.
-     * @param string $nombreFormulario Para el detalle de auditoría.
-     * @return void
-     * @throws ExcepcionHttp 400 si hay campos inesperados.
-     */
-    private function rechazarParametrosInesperados(array $datosFormulario, array $camposPermitidos, string $nombreFormulario): void
-    {
-        $camposInesperados = ValidadorEntrada::obtenerParametrosInesperados($datosFormulario, $camposPermitidos);
-        if ($camposInesperados === []) {
-            return;
-        }
-        $camposProtegidos = ValidadorEntrada::obtenerCamposProtegidos($datosFormulario);
-        if ($camposProtegidos !== []) {
-            $this->auditoriaModel->registrarEventoAuditoria(
-                null,
-                AuditoriaModel::ACCION_INTENTO_ESCALADA_REGISTRO,
-                'usuario',
-                null,
-                ['formulario' => $nombreFormulario, 'camposProtegidos' => implode(',', $camposProtegidos)]
-            );
-        }
-        throw ExcepcionHttp::solicitudInvalida();
     }
 
     /**
@@ -216,35 +140,5 @@ final class AuthController
             'mensajeError'  => $mensajeError,
             'errores'       => $errores,
         ], $codigoEstado);
-    }
-
-    /**
-     * @param array<string, string> $valoresPrevios Valores a conservar (nunca contraseñas).
-     * @param array<string, string> $errores Errores por campo.
-     * @param string|null $mensajeError Error general.
-     * @param int $codigoEstado Código HTTP.
-     * @return Respuesta Vista de registro.
-     */
-    private function vistaRegistro(array $valoresPrevios, array $errores, ?string $mensajeError, int $codigoEstado): Respuesta
-    {
-        return Respuesta::vista('registro', [
-            'tituloPagina'   => 'Crear cuenta',
-            'mensajes'       => $this->gestorSesion->extraerMensajesFlash(),
-            'valoresPrevios' => $valoresPrevios,
-            'errores'        => $errores,
-            'mensajeError'   => $mensajeError,
-        ], $codigoEstado);
-    }
-
-    /**
-     * @param string $rutaInterna Destino.
-     * @param string $tipoMensaje Tipo de mensaje flash.
-     * @param string $mensaje Texto del mensaje.
-     * @return Respuesta Redirección 303.
-     */
-    private function redirigirConMensaje(string $rutaInterna, string $tipoMensaje, string $mensaje): Respuesta
-    {
-        $this->gestorSesion->guardarMensajeFlash($tipoMensaje, $mensaje);
-        return Respuesta::redireccion($rutaInterna);
     }
 }

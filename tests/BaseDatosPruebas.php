@@ -65,6 +65,7 @@ final class BaseDatosPruebas
             'database/migraciones/001-clasificacion-usuario.sql',
             'database/migraciones/002-intento-acceso.sql',
             'database/migraciones/003-nombre-atomico-usuario.sql',
+            'database/migraciones/004-solicitud-acceso-activacion.sql',
         ] as $archivoSql) {
             $this->conexionAdministrativa->exec((string) file_get_contents(RUTA_RAIZ . '/' . $archivoSql));
         }
@@ -108,7 +109,48 @@ final class BaseDatosPruebas
             'DB_USUARIO'    => self::USUARIO_APLICACION,
             'DB_CONTRASENA' => $this->contrasenaAplicacion,
             'CLAVE_HUELLAS' => bin2hex(random_bytes(32)),
+            // Correos al buzón de pruebas en una carpeta temporal (nunca se envían).
+            'APP_URL_PUBLICA'         => 'http://papc.prueba.invalid',
+            'CORREO_MODO'             => 'buzon_pruebas',
+            'CORREO_DIRECTORIO_BUZON' => sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'papc-buzon-pruebas',
         ];
+    }
+
+    /**
+     * Fuerza el vencimiento de los enlaces de una cuenta o solicitud
+     * (simula el paso del tiempo; NO es una vía de la aplicación).
+     *
+     * @param string $tabla token_cuenta o token_solicitud.
+     * @return void
+     */
+    public function vencerTokens(string $tabla): void
+    {
+        $columna = ['token_cuenta' => 'fecha_expiracion_token_cuenta', 'token_solicitud' => 'fecha_expiracion_token_solicitud'][$tabla]
+            ?? throw new InvalidArgumentException('Tabla no válida');
+        $this->obtenerConexionAdministrativa()->exec("UPDATE {$tabla} SET {$columna} = NOW() - INTERVAL 1 SECOND WHERE {$columna} > NOW()");
+    }
+
+    /**
+     * @param string $correo Correo del solicitante.
+     * @return array<string, mixed>|null Solicitud más reciente.
+     */
+    public function obtenerFilaSolicitud(string $correo): ?array
+    {
+        $sentencia = $this->obtenerConexionAdministrativa()->prepare(
+            'SELECT * FROM solicitud_acceso WHERE correo_electronico_solicitante = :correo ORDER BY id_solicitud_acceso DESC LIMIT 1'
+        );
+        $sentencia->execute(['correo' => $correo]);
+        $fila = $sentencia->fetch();
+        return $fila === false ? null : $fila;
+    }
+
+    /**
+     * @param string $sql Consulta escalar de apoyo (solo pruebas).
+     * @return int Resultado.
+     */
+    public function contar(string $sql): int
+    {
+        return (int) $this->obtenerConexionAdministrativa()->query($sql)->fetchColumn();
     }
 
     /**

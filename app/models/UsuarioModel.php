@@ -22,6 +22,16 @@ final class UsuarioModel
     public const TIPO_PROFESOR = 'PROFESOR';
     public const TIPOS_INTEGRANTE = [self::TIPO_ALUMNO, self::TIPO_PROFESOR];
 
+    /* Estado de la cuenta (migración 004): ¿puede usarse en este momento? */
+    public const ESTADO_INVITADA = 'INVITADA';
+    public const ESTADO_ACTIVA = 'ACTIVA';
+    public const ESTADO_SUSPENDIDA = 'SUSPENDIDA';
+    public const ESTADO_BAJA = 'BAJA';
+    public const ESTADOS_CUENTA = [self::ESTADO_INVITADA, self::ESTADO_ACTIVA, self::ESTADO_SUSPENDIDA, self::ESTADO_BAJA];
+
+    /** Roles que exigen segundo factor antes de abrir la sesión. */
+    public const ROLES_CON_SEGUNDO_FACTOR = [self::ROL_ADMINISTRADOR, self::ROL_ADMINISTRADOR_PRINCIPAL];
+
     /* Estado de verificación de la clasificación. */
     public const VERIFICACION_NO_REQUERIDA = 'NO_REQUERIDA';
     public const VERIFICACION_PENDIENTE = 'PENDIENTE';
@@ -29,12 +39,16 @@ final class UsuarioModel
     public const VERIFICACION_RECHAZADA = 'RECHAZADA';
 
     /**
-     * Columnas públicas: nunca incluye hash_contrasena_usuario.
-     * nombre_usuario es una columna calculada por MariaDB (migración 003).
+     * Columnas públicas: nunca incluyen hash_contrasena_usuario ni
+     * secreto_mfa_usuario. nombre_usuario es calculada (migración 003).
+     * tiene_segundo_factor_usuario indica si ya configuró el segundo factor
+     * sin exponer el secreto.
      */
     private const COLUMNAS_SIN_HASH = 'id_usuario, nombres_usuario, apellido_paterno_usuario, apellido_materno_usuario,
-        nombre_usuario, correo_electronico_usuario, rol_usuario, tipo_integrante_usuario,
-        estado_verificacion_usuario, version_sesion_usuario, fecha_registro_usuario';
+        nombre_usuario, correo_electronico_usuario, rol_usuario, estado_cuenta_usuario, tipo_integrante_usuario,
+        identificador_institucional_usuario, fecha_validacion_institucional_usuario, id_usuario_autorizador,
+        estado_verificacion_usuario, version_sesion_usuario, fecha_registro_usuario,
+        (secreto_mfa_usuario IS NOT NULL) AS tiene_segundo_factor_usuario';
 
     /**
      * @param PDO $conexion Conexión de config/database.php.
@@ -107,49 +121,205 @@ final class UsuarioModel
     }
 
     /**
-     * Inserta una cuenta creada por el registro público.
-     *
-     * Seguridad: rol_usuario se fija en el SQL como 'USUARIO' y NO es un
-     * parámetro del método; ningún dato del formulario puede alterarlo.
-     * nombre_usuario no se inserta: MariaDB lo calcula a partir de las partes.
-     *
-     * @param string $nombresUsuario Nombre(s) validado(s).
-     * @param string $apellidoPaterno Apellido paterno validado.
-     * @param string|null $apellidoMaterno Apellido materno o null si no tiene.
-     * @param string $correoElectronico Correo normalizado.
-     * @param string $hashContrasena Hash generado por GestorContrasenas.
-     * @param string $tipoIntegrante ALUMNO o PROFESOR.
-     * @param string $estadoVerificacion NO_REQUERIDA o PENDIENTE.
-     * @return int Id de la cuenta creada.
-     * @throws PDOException Si el correo ya existe (UNIQUE), el nombre completo
-     *                      excede 100 caracteres (CHECK) u otro error.
+     * @param string $identificador Matrícula o número de empleado normalizado.
+     * @return bool true si ya hay una cuenta con ese identificador.
      */
-    public function crearUsuario(
-        string $nombresUsuario,
-        string $apellidoPaterno,
-        ?string $apellidoMaterno,
-        string $correoElectronico,
-        string $hashContrasena,
-        string $tipoIntegrante,
-        string $estadoVerificacion
-    ): int {
+    public function existeIdentificador(string $identificador): bool
+    {
+        $sentencia = $this->conexion->prepare(
+            'SELECT 1 FROM usuario WHERE identificador_institucional_usuario = :identificador LIMIT 1'
+        );
+        $sentencia->execute(['identificador' => $identificador]);
+        return $sentencia->fetchColumn() !== false;
+    }
+
+    /**
+     * Crea una cuenta INVITADA (sin contraseña) tras aprobar una solicitud o
+     * desde la consola del servidor.
+     *
+     * Seguridad: rol_usuario ('USUARIO') y estado_cuenta_usuario ('INVITADA')
+     * se fijan en el SQL y NO son parámetros; ningún dato del formulario
+     * puede alterarlos. hash_contrasena_usuario queda NULL: la persona crea
+     * su contraseña al activar. nombre_usuario lo calcula MariaDB.
+     *
+     * @param array{nombres: string, apellidoPaterno: string, apellidoMaterno: string|null,
+     *              correo: string, tipoIntegrante: string|null, identificador: string|null} $datosCuenta
+     * @param int|null $idUsuarioAutorizador Administrador que aprobó (null = consola).
+     * @return int Id de la cuenta creada.
+     * @throws PDOException Si el correo o el identificador ya existen (UNIQUE).
+     */
+    public function crearCuentaInvitada(array $datosCuenta, ?int $idUsuarioAutorizador): int
+    {
         $sentencia = $this->conexion->prepare(
             "INSERT INTO usuario (nombres_usuario, apellido_paterno_usuario, apellido_materno_usuario,
-                 correo_electronico_usuario, hash_contrasena_usuario,
-                 rol_usuario, tipo_integrante_usuario, estado_verificacion_usuario)
-             VALUES (:nombresUsuario, :apellidoPaterno, :apellidoMaterno,
-                 :correoElectronico, :hashContrasena, 'USUARIO', :tipoIntegrante, :estadoVerificacion)"
+                 correo_electronico_usuario, hash_contrasena_usuario, rol_usuario, estado_cuenta_usuario,
+                 tipo_integrante_usuario, identificador_institucional_usuario,
+                 fecha_validacion_institucional_usuario, id_usuario_autorizador, estado_verificacion_usuario)
+             VALUES (:nombres, :apellidoPaterno, :apellidoMaterno, :correo, NULL, 'USUARIO', 'INVITADA',
+                 :tipoIntegrante, :identificador, NOW(), :idAutorizador, 'VERIFICADA')"
         );
         $sentencia->execute([
-            'nombresUsuario'     => $nombresUsuario,
-            'apellidoPaterno'    => $apellidoPaterno,
-            'apellidoMaterno'    => $apellidoMaterno,
-            'correoElectronico'  => $correoElectronico,
-            'hashContrasena'     => $hashContrasena,
-            'tipoIntegrante'     => $tipoIntegrante,
-            'estadoVerificacion' => $estadoVerificacion,
+            'nombres'         => $datosCuenta['nombres'],
+            'apellidoPaterno' => $datosCuenta['apellidoPaterno'],
+            'apellidoMaterno' => $datosCuenta['apellidoMaterno'],
+            'correo'          => $datosCuenta['correo'],
+            'tipoIntegrante'  => $datosCuenta['tipoIntegrante'],
+            'identificador'   => $datosCuenta['identificador'],
+            'idAutorizador'   => $idUsuarioAutorizador,
         ]);
         return (int) $this->conexion->lastInsertId();
+    }
+
+    /**
+     * INVITADA -> ACTIVA con la contraseña que eligió la persona.
+     *
+     * La condición WHERE hace la transición atómica: solo una petición
+     * puede activar la cuenta. Incrementa la versión de sesión.
+     *
+     * @param int $idUsuario Cuenta.
+     * @param string $hashContrasena Hash nuevo.
+     * @return bool true si la cuenta estaba INVITADA y se activó.
+     */
+    public function activarCuenta(int $idUsuario, string $hashContrasena): bool
+    {
+        $sentencia = $this->conexion->prepare(
+            "UPDATE usuario SET hash_contrasena_usuario = :hashContrasena, estado_cuenta_usuario = 'ACTIVA',
+                 version_sesion_usuario = version_sesion_usuario + 1
+             WHERE id_usuario = :idUsuario AND estado_cuenta_usuario = 'INVITADA'"
+        );
+        $sentencia->execute(['hashContrasena' => $hashContrasena, 'idUsuario' => $idUsuario]);
+        return $sentencia->rowCount() === 1;
+    }
+
+    /**
+     * Restablece la contraseña de una cuenta ACTIVA y cierra todas sus
+     * sesiones. Una cuenta SUSPENDIDA o BAJA no se reactiva por esta vía.
+     *
+     * @param int $idUsuario Cuenta.
+     * @param string $hashContrasena Hash nuevo.
+     * @return bool true si se aplicó.
+     */
+    public function restablecerContrasena(int $idUsuario, string $hashContrasena): bool
+    {
+        $sentencia = $this->conexion->prepare(
+            "UPDATE usuario SET hash_contrasena_usuario = :hashContrasena,
+                 version_sesion_usuario = version_sesion_usuario + 1
+             WHERE id_usuario = :idUsuario AND estado_cuenta_usuario = 'ACTIVA'"
+        );
+        $sentencia->execute(['hashContrasena' => $hashContrasena, 'idUsuario' => $idUsuario]);
+        return $sentencia->rowCount() === 1;
+    }
+
+    /**
+     * Cambia el estado de la cuenta solo si sigue en el estado esperado
+     * (evita decisiones simultáneas) e invalida sus sesiones.
+     *
+     * @param int $idUsuario Cuenta.
+     * @param string $estadoAnterior Estado leído antes de decidir.
+     * @param string $estadoNuevo Estado destino (uno de self::ESTADOS_CUENTA).
+     * @return bool true si se aplicó.
+     * @throws InvalidArgumentException Si algún estado no existe.
+     */
+    public function actualizarEstadoCuenta(int $idUsuario, string $estadoAnterior, string $estadoNuevo): bool
+    {
+        if (!in_array($estadoAnterior, self::ESTADOS_CUENTA, true) || !in_array($estadoNuevo, self::ESTADOS_CUENTA, true)) {
+            throw new InvalidArgumentException('Estado de cuenta no válido.');
+        }
+        $sentencia = $this->conexion->prepare(
+            'UPDATE usuario SET estado_cuenta_usuario = :estadoNuevo, version_sesion_usuario = version_sesion_usuario + 1
+             WHERE id_usuario = :idUsuario AND estado_cuenta_usuario = :estadoAnterior'
+        );
+        $sentencia->execute(['estadoNuevo' => $estadoNuevo, 'idUsuario' => $idUsuario, 'estadoAnterior' => $estadoAnterior]);
+        return $sentencia->rowCount() === 1;
+    }
+
+    /**
+     * Bloquea la fila de la cuenta hasta el fin de la transacción.
+     *
+     * @param int $idUsuario Cuenta.
+     * @return array<string, mixed>|null Fila sin hash ni secreto.
+     */
+    public function obtenerUsuarioParaActualizar(int $idUsuario): ?array
+    {
+        $sentencia = $this->conexion->prepare(
+            'SELECT ' . self::COLUMNAS_SIN_HASH . ' FROM usuario WHERE id_usuario = :idUsuario LIMIT 1 FOR UPDATE'
+        );
+        $sentencia->execute(['idUsuario' => $idUsuario]);
+        $usuario = $sentencia->fetch();
+        return $usuario === false ? null : $usuario;
+    }
+
+    /**
+     * @param int $idUsuario Cuenta.
+     * @return array{secreto: string|null, ultimoPaso: int|null} Secreto CIFRADO.
+     */
+    public function obtenerSegundoFactor(int $idUsuario): array
+    {
+        $sentencia = $this->conexion->prepare(
+            'SELECT secreto_mfa_usuario, ultimo_paso_mfa_usuario FROM usuario WHERE id_usuario = :idUsuario LIMIT 1'
+        );
+        $sentencia->execute(['idUsuario' => $idUsuario]);
+        $fila = $sentencia->fetch() ?: [];
+        return [
+            'secreto'    => isset($fila['secreto_mfa_usuario']) ? (string) $fila['secreto_mfa_usuario'] : null,
+            'ultimoPaso' => isset($fila['ultimo_paso_mfa_usuario']) ? (int) $fila['ultimo_paso_mfa_usuario'] : null,
+        ];
+    }
+
+    /**
+     * Guarda el secreto TOTP cifrado SOLO si la cuenta aún no tenía uno
+     * (no se puede sobrescribir un segundo factor ya configurado).
+     *
+     * @param int $idUsuario Cuenta.
+     * @param string $secretoCifrado Resultado de CifradorSecretos::cifrar().
+     * @param int $pasoAceptado Paso TOTP con el que se confirmó.
+     * @return bool true si se guardó.
+     */
+    public function guardarSegundoFactor(int $idUsuario, string $secretoCifrado, int $pasoAceptado): bool
+    {
+        $sentencia = $this->conexion->prepare(
+            'UPDATE usuario SET secreto_mfa_usuario = :secreto, fecha_activacion_mfa_usuario = NOW(),
+                 ultimo_paso_mfa_usuario = :paso
+             WHERE id_usuario = :idUsuario AND secreto_mfa_usuario IS NULL'
+        );
+        $sentencia->execute(['secreto' => $secretoCifrado, 'paso' => $pasoAceptado, 'idUsuario' => $idUsuario]);
+        return $sentencia->rowCount() === 1;
+    }
+
+    /**
+     * Registra el paso TOTP usado; falla si ese código (o uno posterior) ya
+     * se aceptó, así un código interceptado no sirve dos veces.
+     *
+     * @param int $idUsuario Cuenta.
+     * @param int $pasoAceptado Paso verificado.
+     * @return bool true si el paso es nuevo.
+     */
+    public function registrarPasoSegundoFactor(int $idUsuario, int $pasoAceptado): bool
+    {
+        $sentencia = $this->conexion->prepare(
+            'UPDATE usuario SET ultimo_paso_mfa_usuario = :paso
+             WHERE id_usuario = :idUsuario AND (ultimo_paso_mfa_usuario IS NULL OR ultimo_paso_mfa_usuario < :pasoComparado)'
+        );
+        $sentencia->execute(['paso' => $pasoAceptado, 'idUsuario' => $idUsuario, 'pasoComparado' => $pasoAceptado]);
+        return $sentencia->rowCount() === 1;
+    }
+
+    /**
+     * Elimina el segundo factor (restablecimiento autorizado) y cierra las
+     * sesiones de la cuenta.
+     *
+     * @param int $idUsuario Cuenta.
+     * @return bool true si la cuenta tenía segundo factor.
+     */
+    public function eliminarSegundoFactor(int $idUsuario): bool
+    {
+        $sentencia = $this->conexion->prepare(
+            'UPDATE usuario SET secreto_mfa_usuario = NULL, fecha_activacion_mfa_usuario = NULL,
+                 ultimo_paso_mfa_usuario = NULL, version_sesion_usuario = version_sesion_usuario + 1
+             WHERE id_usuario = :idUsuario AND secreto_mfa_usuario IS NOT NULL'
+        );
+        $sentencia->execute(['idUsuario' => $idUsuario]);
+        return $sentencia->rowCount() === 1;
     }
 
     /**
@@ -240,5 +410,19 @@ final class UsuarioModel
         return (int) $this->conexion
             ->query("SELECT COUNT(*) FROM usuario WHERE rol_usuario = 'ADMINISTRADOR_PRINCIPAL'")
             ->fetchColumn();
+    }
+
+    /**
+     * @param int $idUsuarioExcluido Cuenta que se está modificando.
+     * @return int Principales ACTIVOS distintos de esa cuenta.
+     */
+    public function contarOtrosPrincipalesActivos(int $idUsuarioExcluido): int
+    {
+        $sentencia = $this->conexion->prepare(
+            "SELECT COUNT(*) FROM usuario WHERE rol_usuario = 'ADMINISTRADOR_PRINCIPAL'
+               AND estado_cuenta_usuario = 'ACTIVA' AND id_usuario <> :idUsuario"
+        );
+        $sentencia->execute(['idUsuario' => $idUsuarioExcluido]);
+        return (int) $sentencia->fetchColumn();
     }
 }

@@ -91,6 +91,63 @@ final class LimitadorIntentos
     }
 
     /**
+     * Límite genérico por ÁMBITO (solicitud, recuperación, segundo factor).
+     *
+     * El ámbito se antepone al valor antes de calcular la huella, de modo que
+     * los contadores de cada formulario son independientes entre sí y del
+     * inicio de sesión, aunque compartan la tabla intento_acceso.
+     *
+     * @param string $ambito Nombre corto del formulario (p. ej. "solicitud").
+     * @param string $identificador Correo normalizado o id de la cuenta.
+     * @param string $origen IP del cliente.
+     * @param int $maximoIdentificador Envíos permitidos por identificador.
+     * @param int $maximoOrigen Envíos permitidos por origen.
+     * @return bool true si se permite.
+     */
+    public function verificarLimiteAmbito(string $ambito, string $identificador, string $origen, int $maximoIdentificador, int $maximoOrigen): bool
+    {
+        $intentosIdentificador = $this->intentoAccesoModel->contarIntentosPorCorreo(
+            $this->calcularHuella($ambito . ':' . $identificador),
+            VENTANA_INTENTOS_SEGUNDOS
+        );
+        if ($intentosIdentificador >= $maximoIdentificador) {
+            return false;
+        }
+        $intentosOrigen = $this->intentoAccesoModel->contarIntentosPorOrigen(
+            $this->calcularHuella($ambito . ':' . $origen),
+            VENTANA_INTENTOS_SEGUNDOS
+        );
+        return $intentosOrigen < $maximoOrigen;
+    }
+
+    /**
+     * Registra un envío o fallo dentro de un ámbito.
+     *
+     * @param string $ambito Nombre corto del formulario.
+     * @param string $identificador Correo normalizado o id de la cuenta.
+     * @param string $origen IP del cliente.
+     * @return void
+     */
+    public function registrarIntentoAmbito(string $ambito, string $identificador, string $origen): void
+    {
+        $this->intentoAccesoModel->registrarIntentoFallido(
+            $this->calcularHuella($ambito . ':' . $identificador),
+            $this->calcularHuella($ambito . ':' . $origen)
+        );
+        $this->intentoAccesoModel->purgarIntentosAntiguos(RETENCION_INTENTOS_SEGUNDOS);
+    }
+
+    /**
+     * @param string $ambito Nombre corto del formulario.
+     * @param string $identificador Correo normalizado o id de la cuenta.
+     * @return void
+     */
+    public function reiniciarIntentosAmbito(string $ambito, string $identificador): void
+    {
+        $this->intentoAccesoModel->eliminarIntentosPorCorreo($this->calcularHuella($ambito . ':' . $identificador));
+    }
+
+    /**
      * Reinicia el contador de la cuenta tras un login correcto.
      *
      * @param string $correoNormalizado Correo autenticado.

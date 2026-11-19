@@ -23,7 +23,7 @@ final class RoleMiddleware
     public const ROL_INVITADO = 'INVITADO';
 
     /** Permisos cuya denegación se considera intento de escalada. */
-    private const PERMISOS_DE_PRIVILEGIO = ['asignar_rol_administrativo'];
+    private const PERMISOS_DE_PRIVILEGIO = ['asignar_rol_administrativo', 'resolver_solicitud', 'gestionar_estado_cuenta'];
 
     /**
      * @param array<string, list<string>> $matrizPermisos Contenido de config/permisos.php.

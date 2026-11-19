@@ -65,7 +65,9 @@ final class Respuesta
      */
     public static function esRutaInternaSegura(string $ruta): bool
     {
-        return preg_match('#^/(?![/\\\\])[A-Za-z0-9\-._~/]*$#', $ruta) === 1;
+        // Ruta + cadena de consulta opcional solo con caracteres seguros
+        // (p. ej. /admin/solicitudes/detalle?id=5).
+        return preg_match('#^/(?![/\\\\])[A-Za-z0-9\-._~/]*(\?[A-Za-z0-9\-._~=&]*)?$#', $ruta) === 1;
     }
 
     /**
@@ -103,7 +105,9 @@ final class Respuesta
         header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: DENY');
-        header('Referrer-Policy: same-origin');
+        // no-referrer: los enlaces con token (activar, restablecer) nunca se
+        // filtran en el encabezado Referer (especificación 1.3, 9.3).
+        header('Referrer-Policy: no-referrer');
         header('Cache-Control: no-store');
         header('Content-Type: text/html; charset=UTF-8');
         header_remove('X-Powered-By');

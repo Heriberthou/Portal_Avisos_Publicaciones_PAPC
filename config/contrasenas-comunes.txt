@@ -96,3 +96,19 @@ ciberseguridad12345
 seguridadinformatica
 seguridadinformatica123
 marenostrumveritabilefaciendum
+
+# --- Agregadas con la especificación 1.3 (patrones de teclado y términos locales) ---
+qwertyuiopasdfg
+qwertyuiopasdfgh
+1234567890qwerty
+qwerty1234567890
+123456789qwerty
+123456789abcdef
+abcdef123456789
+147258369147258
+159753159753159
+741852963741852
+contrasenasupersegura
+unacontrasenamuysegura
+puertoescondido
+inteligenciaartificial

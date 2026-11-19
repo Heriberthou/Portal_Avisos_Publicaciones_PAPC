@@ -7,6 +7,11 @@
  * aparece aquí está denegado (denegación por defecto). "INVITADO" es un
  * pseudo-rol para solicitudes sin sesión; no existe en la base de datos.
  *
+ * Especificación 1.3 (sección 3.2): "Registrarse" se sustituye por
+ * "solicitar_acceso"; las solicitudes las revisan y resuelven ADMINISTRADOR
+ * y PRINCIPAL; asignar o revocar roles y restablecer el segundo factor de
+ * otro administrador es exclusivo del PRINCIPAL.
+ *
  * Nota: "Editar propuesta PENDIENTE" no se lista porque en la Fase I
  * ningún rol lo tiene (la propuesta enviada es inmutable).
  *
@@ -23,7 +28,7 @@ return [
     // Públicos
     'leer_publicaciones'           => ['INVITADO', 'USUARIO', 'ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
     'buscar_publicaciones'         => ['INVITADO', 'USUARIO', 'ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
-    'registrarse'                  => ['INVITADO'],
+    'solicitar_acceso'             => ['INVITADO'],
     'iniciar_sesion'               => ['INVITADO'],
 
     // Usuarios registrados (ALUMNO o PROFESOR por igual)
@@ -39,6 +44,10 @@ return [
     'resolver_propuesta'           => ['ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
     'moderar_comentario'           => ['ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
     'administrar_cuentas'          => ['ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
+    'revisar_solicitudes'          => ['ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
+    'resolver_solicitud'           => ['ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
+    // Sobre cuentas USUARIO; el servicio exige PRINCIPAL si la cuenta es administrativa.
+    'gestionar_estado_cuenta'      => ['ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
     'verificar_clasificacion'      => ['ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
     'consultar_bitacora'           => ['ADMINISTRADOR', 'ADMINISTRADOR_PRINCIPAL'],
 

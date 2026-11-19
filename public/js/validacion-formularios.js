@@ -11,6 +11,7 @@
  *  - Contador de caracteres de la contraseña (mínimo 15).
  *  - Aviso de coincidencia entre contraseña y confirmación.
  *  - Botón accesible para mostrar u ocultar la contraseña.
+ *  - "Procesando..." y bloqueo temporal del botón para evitar envíos dobles.
  *
  * Los errores no aparecen al cargar la página: solo después de que el
  * usuario sale del campo o intenta enviar el formulario.
@@ -121,7 +122,21 @@
             case 'opcion':
                 var nombreGrupo = campo.getAttribute('data-nombre');
                 return formulario.querySelector('input[name="' + nombreGrupo + '"]:checked')
-                    ? '' : 'Seleccione si se registra como alumno o profesor.';
+                    ? '' : (campo.getAttribute('data-mensaje-vacio') || 'Seleccione una opción.');
+
+            case 'identificador':
+                // Mismo criterio que ValidadorEntrada::validarIdentificador().
+                valor = valor.replace(/\s+/g, '').toUpperCase();
+                if (valor === '') {
+                    return 'Escriba su matrícula o identificador institucional.';
+                }
+                minimo = leerLimite(campo, 'minlength', 4);
+                maximo = leerLimite(campo, 'maxlength', 20);
+                longitud = contarCaracteres(valor);
+                if (longitud < minimo || longitud > maximo || !/^[A-Z0-9][A-Z0-9\-]*$/.test(valor)) {
+                    return 'El identificador debe tener entre ' + minimo + ' y ' + maximo + ' letras, números o guiones.';
+                }
+                return '';
 
             default:
                 return '';
@@ -214,6 +229,33 @@
     }
 
     /**
+     * Evita el doble envío mientras el servidor responde: el botón muestra
+     * "Procesando..." y se reactiva a los 15 s (por si la red falla) o al
+     * volver a la página con el botón Atrás. No bloquea indefinidamente.
+     * @param {HTMLFormElement} formulario
+     */
+    function bloquearEnvioDuplicado(formulario) {
+        var boton = formulario.querySelector('button[type="submit"]');
+        if (!boton || boton.disabled) {
+            return;
+        }
+        var textoOriginal = boton.textContent;
+        // Se desactiva después de que el navegador tome el envío actual.
+        window.setTimeout(function () {
+            boton.disabled = true;
+            boton.setAttribute('aria-busy', 'true');
+            boton.textContent = 'Procesando...';
+        }, 0);
+        var reactivar = function () {
+            boton.disabled = false;
+            boton.removeAttribute('aria-busy');
+            boton.textContent = textoOriginal;
+        };
+        window.setTimeout(reactivar, 15000);
+        window.addEventListener('pageshow', reactivar, { once: true });
+    }
+
+    /**
      * @param {HTMLFormElement} formulario
      */
     function prepararFormulario(formulario) {
@@ -291,7 +333,9 @@
                     ? primerInvalido.querySelector('input')
                     : primerInvalido;
                 destino.focus();
+                return;
             }
+            bloquearEnvioDuplicado(formulario);
         });
     }
 
