@@ -1,0 +1,1113 @@
+<?php
+
+/**
+ * Pruebas de integración del circuito de la especificación 1.3:
+ * solicitud -> verificación del correo -> aprobación -> cuenta INVITADA ->
+ * activación -> inicio de sesión (con segundo factor para administradores)
+ * -> recuperación, estados de cuenta y roles.
+ *
+ * Se ejecutan contra una base MariaDB de pruebas, conectando con la cuenta
+ * de MÍNIMOS privilegios (igual que la aplicación real). Los correos van a
+ * un buzón temporal (BuzonPruebas) del que se leen los enlaces.
+ * Los identificadores AC-xx remiten a la sección 11.1 de la especificación.
+ */
+
+declare(strict_types=1);
+
+return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos): void {
+    $buzon = new BuzonPruebas((string) getenv('CORREO_DIRECTORIO_BUZON'));
+    $buzon->vaciar();
+
+    $dependencias = Aplicacion::construirDependencias(obtenerConexionBaseDatos());
+    /** @var ServicioAutenticacion $servicioAutenticacion */
+    $servicioAutenticacion = $dependencias['servicioAutenticacion'];
+    /** @var ServicioSolicitudAcceso $servicioSolicitud */
+    $servicioSolicitud = $dependencias['servicioSolicitudAcceso'];
+    /** @var ServicioCredenciales $servicioCredenciales */
+    $servicioCredenciales = $dependencias['servicioCredenciales'];
+    /** @var ServicioSegundoFactor $servicioSegundoFactor */
+    $servicioSegundoFactor = $dependencias['servicioSegundoFactor'];
+    /** @var ServicioAdministracionUsuarios $servicioAdministracion */
+    $servicioAdministracion = $dependencias['servicioAdministracion'];
+    /** @var GestorSesion $gestorSesion */
+    $gestorSesion = $dependencias['gestorSesion'];
+    /** @var RoleMiddleware $roleMiddleware */
+    $roleMiddleware = $dependencias['roleMiddleware'];
+    /** @var UsuarioModel $usuarioModel */
+    $usuarioModel = $dependencias['usuarioModel'];
+
+    $contrasenaComun = 'frase de paso de pruebas numero uno';
+    $contrasenaPrincipal = 'el faro del puerto ilumina la bahia';
+
+    $reiniciarSesion = static function (): void {
+        GestorSesion::iniciarSesionPhp();
+        $_SESSION = [];
+    };
+
+    // Cada solicitud llega desde una IP distinta para no mezclar los límites
+    // por origen con lo que se prueba (el límite se prueba aparte en P15).
+    $contadorOrigen = 0;
+    $origenNuevo = static function () use (&$contadorOrigen): string {
+        $contadorOrigen++;
+        return '198.18.' . intdiv($contadorOrigen, 250) . '.' . ($contadorOrigen % 250 + 1);
+    };
+
+    $datosSolicitud = static fn (string $nombres, string $paterno, string $correo, string $tipo, string $identificador): array => [
+        'nombres' => $nombres, 'apellidoPaterno' => $paterno, 'apellidoMaterno' => null,
+        'tipoIntegrante' => $tipo, 'identificador' => $identificador, 'correo' => $correo,
+    ];
+
+    $solicitar = static function (string $nombres, string $paterno, string $correo, string $tipo, string $identificador) use ($servicioSolicitud, $datosSolicitud, $origenNuevo): string {
+        return $servicioSolicitud->registrarSolicitud($datosSolicitud($nombres, $paterno, $correo, $tipo, $identificador), $origenNuevo());
+    };
+
+    $verificar = static function (string $correo) use ($servicioSolicitud, $buzon): string {
+        $token = $buzon->ultimoToken($correo, '/verificar-solicitud');
+        MarcoPruebas::afirmar($token !== null, "Hay enlace de verificación para {$correo}");
+        return $servicioSolicitud->verificarCorreo((string) $token);
+    };
+
+    $actor = static fn (string $correo): array => (array) $usuarioModel->obtenerUsuarioPorId((int) $usuarioModel->obtenerUsuarioPorCorreo($correo)['id_usuario']);
+
+    $aprobar = static function (array $usuarioActor, string $correo) use ($servicioSolicitud, $baseDatos): array {
+        return $servicioSolicitud->aprobarSolicitud($usuarioActor, (int) $baseDatos->obtenerFilaSolicitud($correo)['id_solicitud_acceso'], 'Cotejo con el padrón ficticio de pruebas', true);
+    };
+
+    $activar = static function (string $correo, string $contrasena) use ($servicioCredenciales, $buzon): array {
+        return $servicioCredenciales->activarCuenta((string) $buzon->ultimoToken($correo, '/activar-cuenta'), $contrasena);
+    };
+
+    $altaCompleta = static function (string $nombres, string $paterno, string $correo, string $tipo, string $identificador, array $usuarioActor)
+        use ($solicitar, $verificar, $aprobar, $activar, $contrasenaComun): void {
+        $solicitar($nombres, $paterno, $correo, $tipo, $identificador);
+        $verificar($correo);
+        $resultado = $aprobar($usuarioActor, $correo);
+        MarcoPruebas::afirmar($resultado['exito'], 'Aprobación de ' . $correo . ': ' . $resultado['mensaje']);
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_EXITO, $activar($correo, $contrasenaComun)['resultado'], "Activación de {$correo}");
+    };
+
+    $iniciarComo = static function (string $correo, ?string $contrasena = null) use ($servicioAutenticacion, $reiniciarSesion, $contrasenaComun): string {
+        $reiniciarSesion();
+        return $servicioAutenticacion->iniciarSesion($correo, $contrasena ?? $contrasenaComun, '192.0.2.250');
+    };
+
+    // Secretos TOTP que las "aplicaciones de autenticación" de prueba conocen.
+    $secretosTotp = [];
+    $codigoActual = static fn (string $secreto, int $desplazamiento = 0): string
+        => SegundoFactorTotp::calcularCodigo(SegundoFactorTotp::decodificarBase32($secreto), intdiv(time(), 30) + $desplazamiento);
+
+    /**
+     * Inicia sesión de un administrador completando (o configurando) el
+     * segundo factor. Para que las pruebas no dependan del reloj, antes de
+     * usar el código vigente se olvida el último paso usado (preparación de
+     * escenario; la protección contra reutilización se prueba en P26b).
+     */
+    $entrarConSegundoFactor = static function (string $correo, string $contrasena)
+        use (&$secretosTotp, $iniciarComo, $servicioSegundoFactor, $codigoActual, $baseDatos, $buzon, $gestorSesion): string {
+        $resultado = $iniciarComo($correo, $contrasena);
+        if ($resultado === ServicioAutenticacion::RESULTADO_REQUIERE_CONFIGURAR_SEGUNDO_FACTOR) {
+            // R-02: la persona abre el enlace de configuración que llegó a su correo.
+            $gestorSesion->guardarTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO, (string) $buzon->ultimoToken($correo, '/configurar-segundo-factor'));
+            $configuracion = $servicioSegundoFactor->prepararConfiguracion();
+            $secretosTotp[$correo] = $configuracion['secreto'];
+            return $servicioSegundoFactor->confirmarConfiguracion($codigoActual($configuracion['secreto']), '192.0.2.250')['resultado'];
+        }
+        if ($resultado === ServicioAutenticacion::RESULTADO_REQUIERE_SEGUNDO_FACTOR) {
+            $baseDatos->obtenerConexionAdministrativa()->prepare('UPDATE usuario SET ultimo_paso_mfa_usuario = NULL WHERE correo_electronico_usuario = ?')->execute([$correo]);
+            return $servicioSegundoFactor->verificarCodigo($codigoActual($secretosTotp[$correo]), '192.0.2.250');
+        }
+        return $resultado;
+    };
+
+    $construirEnrutador = static function () use ($dependencias): Enrutador {
+        $enrutador = new Enrutador($dependencias['authMiddleware'], $dependencias['roleMiddleware'], $dependencias['auditoriaModel']);
+        (require RUTA_RAIZ . '/config/rutas.php')($enrutador, $dependencias);
+        return $enrutador;
+    };
+
+    /* ======================= Primer administrador principal ======================= */
+
+    $marco->probar('P19', 'AC-27: el primer principal se crea solo por consola, sin contraseña predeterminada y una sola vez', static function () use ($servicioAdministracion, $baseDatos): void {
+        $resultado = $servicioAdministracion->inicializarAdministradorPrincipal('paula@ejemplo.mx', ['nombres' => 'Paula', 'apellidoPaterno' => 'Principal', 'apellidoMaterno' => null]);
+        MarcoPruebas::afirmar($resultado['exito'], $resultado['mensaje']);
+        MarcoPruebas::afirmar(GeneradorTokens::esFormatoValido($resultado['tokenActivacion']), 'Se entrega un enlace de activación');
+        MarcoPruebas::afirmar(GeneradorTokens::esFormatoValido($resultado['tokenEnrolamiento']), 'R-02: y un enlace para configurar el segundo factor');
+        $GLOBALS['tokenEnrolamientoPaula'] = $resultado['tokenEnrolamiento'];
+        $fila = $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('ADMINISTRADOR_PRINCIPAL', $fila['rol_usuario'], 'Rol principal');
+        MarcoPruebas::afirmarIgual('INVITADA', $fila['estado_cuenta_usuario'], 'Cuenta INVITADA');
+        MarcoPruebas::afirmarIgual(null, $fila['hash_contrasena_usuario'], 'Sin contraseña hasta activar');
+
+        $segundo = $servicioAdministracion->inicializarAdministradorPrincipal('otro@ejemplo.mx', ['nombres' => 'Otro', 'apellidoPaterno' => 'Principal', 'apellidoMaterno' => null]);
+        MarcoPruebas::afirmar(!$segundo['exito'], 'La inicialización no se repite');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaUsuario('otro@ejemplo.mx'), 'No se creó otra cuenta');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contarEventos('INICIALIZACION_ADMINISTRADOR_PRINCIPAL'), 'Inicialización auditada una vez');
+        $GLOBALS['tokenActivacionPaula'] = $resultado['tokenActivacion'];
+    });
+
+    $marco->probar('P30a', 'AC-09/AC-10: activación rechaza contraseñas comunes, usa el enlace una sola vez y no abre sesión', static function () use ($servicioCredenciales, $baseDatos, $contrasenaPrincipal, $reiniciarSesion): void {
+        $reiniciarSesion();
+        $token = (string) $GLOBALS['tokenActivacionPaula'];
+        $rechazada = $servicioCredenciales->activarCuenta($token, 'Universidad del Mar 2026');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_CONTRASENA_RECHAZADA, $rechazada['resultado'], 'Contraseña común de 15+ rechazada');
+        MarcoPruebas::afirmarIgual('INVITADA', $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['estado_cuenta_usuario'], 'Sigue INVITADA y el enlace no se consumió');
+
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_EXITO, $servicioCredenciales->activarCuenta($token, $contrasenaPrincipal)['resultado'], 'Activación');
+        $fila = $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('ACTIVA', $fila['estado_cuenta_usuario'], 'Cuenta ACTIVA');
+        MarcoPruebas::afirmar(str_starts_with((string) $fila['hash_contrasena_usuario'], '$argon2id$'), 'Hash Argon2id (P05b)');
+        MarcoPruebas::afirmar(!str_contains((string) $fila['hash_contrasena_usuario'], $contrasenaPrincipal), 'Sin contraseña en claro');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_ENLACE_INVALIDO, $servicioCredenciales->activarCuenta($token, 'otra frase distinta y larga de paso')['resultado'], 'El enlace ya no sirve');
+        MarcoPruebas::afirmar(!isset($_SESSION['idUsuario']), 'Activar no inicia sesión');
+    });
+
+    $marco->probar('P26a', 'AC-14: la contraseña correcta de un administrador sin segundo factor no abre sesión', static function () use ($iniciarComo, $gestorSesion, $construirEnrutador, $contrasenaPrincipal, $servicioSegundoFactor, $codigoActual, $baseDatos, &$secretosTotp): void {
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_REQUIERE_CONFIGURAR_SEGUNDO_FACTOR, $iniciarComo('paula@ejemplo.mx', $contrasenaPrincipal), 'Pide configurar el segundo factor');
+        MarcoPruebas::afirmar(!isset($_SESSION['idUsuario']), 'No hay sesión autenticada');
+        MarcoPruebas::afirmarIgual(null, $gestorSesion->validarSesion(), 'Para el servidor sigue siendo visitante');
+        $enrutador = $construirEnrutador();
+        MarcoPruebas::afirmarExcepcionHttp(401, static fn () => $enrutador->despachar('GET', '/admin/solicitudes', []), 'Administración cerrada');
+
+        // R-02: con la contraseña sola no se puede configurar un autenticador.
+        MarcoPruebas::afirmarIgual(null, $servicioSegundoFactor->prepararConfiguracion(), 'Sin el enlace de configuración no se muestra ningún secreto');
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_SIN_AUTORIZACION, $servicioSegundoFactor->confirmarConfiguracion('123456', '192.0.2.250')['resultado'], 'Ni se puede confirmar');
+        GestorSesion::iniciarSesionPhp();
+        $_SESSION['tokensEnlace'][GestorSesion::ENLACE_ENROLAMIENTO] = (string) $GLOBALS['tokenEnrolamientoPaula'];
+
+        $configuracion = $servicioSegundoFactor->prepararConfiguracion();
+        MarcoPruebas::afirmar($configuracion !== null && str_starts_with($configuracion['uri'], 'otpauth://totp/PAPC:'), 'Con el enlace se propone un secreto');
+        $fallido = $servicioSegundoFactor->confirmarConfiguracion('000000' === $codigoActual($configuracion['secreto']) ? '111111' : '000000', '192.0.2.250');
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_CODIGO_INVALIDO, $fallido['resultado'], 'Código incorrecto rechazado');
+        MarcoPruebas::afirmar(!isset($_SESSION['idUsuario']), 'Sigue sin sesión');
+
+        $resultado = $servicioSegundoFactor->confirmarConfiguracion($codigoActual($configuracion['secreto']), '192.0.2.250');
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_EXITO, $resultado['resultado'], 'Configuración confirmada');
+        MarcoPruebas::afirmarIgual(CANTIDAD_CODIGOS_RECUPERACION_MFA, count($resultado['codigosRecuperacion']), 'Códigos de recuperación generados');
+        MarcoPruebas::afirmar($gestorSesion->validarSesion() !== null && $_SESSION['segundoFactorCompletado'] === true, 'Sesión administrativa tras el segundo factor');
+        $secretoGuardado = (string) $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['secreto_mfa_usuario'];
+        MarcoPruebas::afirmar(str_starts_with($secretoGuardado, 'v1:') && !str_contains($secretoGuardado, $configuracion['secreto']), 'Secreto cifrado en la BD');
+        MarcoPruebas::afirmarIgual(CANTIDAD_CODIGOS_RECUPERACION_MFA, $baseDatos->contar('SELECT COUNT(*) FROM codigo_recuperacion_mfa WHERE fecha_uso_codigo_recuperacion_mfa IS NULL'), 'Solo se guardan sus huellas');
+        $secretosTotp['paula@ejemplo.mx'] = $configuracion['secreto'];
+        $GLOBALS['codigosRecuperacionPaula'] = $resultado['codigosRecuperacion'];
+    });
+
+    /* ============================ Solicitud de acceso ============================ */
+
+    $marco->probar('P01', 'AC-01/RF-02: la solicitud queda PENDIENTE sin crear cuenta ni contraseña y envía un enlace de verificación', static function () use ($solicitar, $baseDatos, $buzon): void {
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_RECIBIDA, $solicitar('Ana', 'Alumna', 'ana@ejemplo.mx', 'ALUMNO', 'A2026001'), 'Respuesta neutral');
+        $solicitud = $baseDatos->obtenerFilaSolicitud('ana@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('PENDIENTE', $solicitud['estado_solicitud'], 'Estado PENDIENTE');
+        MarcoPruebas::afirmarIgual(null, $solicitud['fecha_verificacion_correo_solicitud'], 'Correo aún no verificado');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx'), 'No existe cuenta');
+        MarcoPruebas::afirmar($buzon->ultimoToken('ana@ejemplo.mx', '/verificar-solicitud') !== null, 'Enlace de verificación en el buzón');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contarEventos('SOLICITUD_CREADA'), 'Auditado');
+        MarcoPruebas::afirmarIgual(0, $baseDatos->contar("SELECT COUNT(*) FROM token_solicitud WHERE hash_token_solicitud = '" . $buzon->ultimoToken('ana@ejemplo.mx', '/verificar-solicitud') . "'"), 'El token NO se guarda en claro');
+    });
+
+    $marco->probar('P02', 'AC-03: sin verificar el correo la solicitud no aparece en la bandeja ni puede aprobarse', static function () use ($actor, $aprobar, $baseDatos): void {
+        $bandeja = (new SolicitudAccesoModel(obtenerConexionBaseDatos()))->listarSolicitudes('PENDIENTE', null, null);
+        MarcoPruebas::afirmarIgual([], $bandeja, 'Bandeja vacía');
+        $resultado = $aprobar($actor('paula@ejemplo.mx'), 'ana@ejemplo.mx');
+        MarcoPruebas::afirmar(!$resultado['exito'], 'No se puede aprobar');
+        MarcoPruebas::afirmarIgual('PENDIENTE', $baseDatos->obtenerFilaSolicitud('ana@ejemplo.mx')['estado_solicitud'], 'Sin cambios');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx'), 'Sin cuenta');
+    });
+
+    $marco->probar('P03', 'AC-04: una solicitud repetida no crea otra solicitud ni deja dos enlaces vigentes', static function () use ($solicitar, $buzon, $baseDatos, $servicioSolicitud, $verificar): void {
+        $tokenAnterior = (string) $buzon->ultimoToken('ana@ejemplo.mx', '/verificar-solicitud');
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_RECIBIDA, $solicitar('Ana María', 'Otra', 'ana@ejemplo.mx', 'PROFESOR', 'P999'), 'Misma respuesta neutral');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contar("SELECT COUNT(*) FROM solicitud_acceso WHERE correo_electronico_solicitante = 'ana@ejemplo.mx'"), 'Una sola solicitud');
+        MarcoPruebas::afirmarIgual('ALUMNO', $baseDatos->obtenerFilaSolicitud('ana@ejemplo.mx')['tipo_integrante_solicitado'], 'Los datos originales no se reemplazan en silencio');
+        MarcoPruebas::afirmar($buzon->ultimoToken('ana@ejemplo.mx', '/verificar-solicitud') !== $tokenAnterior, 'Se reenvió un enlace nuevo');
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_ENLACE_INVALIDO, $servicioSolicitud->verificarCorreo($tokenAnterior), 'El enlace anterior dejó de servir');
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_VERIFICADA, $verificar('ana@ejemplo.mx'), 'El nuevo sí verifica');
+
+        $mensajesAntes = count($buzon->mensajesPara('ana@ejemplo.mx'));
+        $solicitar('Ana', 'Alumna', 'ana@ejemplo.mx', 'ALUMNO', 'A2026001');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contar("SELECT COUNT(*) FROM solicitud_acceso WHERE correo_electronico_solicitante = 'ana@ejemplo.mx'"), 'Sigue una sola');
+        $mensajes = $buzon->mensajesPara('ana@ejemplo.mx');
+        MarcoPruebas::afirmar(count($mensajes) === $mensajesAntes + 1 && str_contains(end($mensajes), 'ya está en revisión'), 'Se avisa por correo que está en revisión');
+    });
+
+    $marco->probar('P25', 'RF-03: el enlace de verificación sirve una vez, vence y puede reenviarse', static function () use ($solicitar, $buzon, $servicioSolicitud, $baseDatos, $origenNuevo): void {
+        $solicitar('Beto', 'Bravo', 'beto@ejemplo.mx', 'ALUMNO', 'A2026002');
+        $token = (string) $buzon->ultimoToken('beto@ejemplo.mx', '/verificar-solicitud');
+        $baseDatos->vencerTokens('token_solicitud');
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_ENLACE_INVALIDO, $servicioSolicitud->verificarCorreo($token), 'Enlace vencido rechazado');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaSolicitud('beto@ejemplo.mx')['fecha_verificacion_correo_solicitud'], 'Sigue sin verificar');
+
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_RECIBIDA, $servicioSolicitud->reenviarVerificacion('beto@ejemplo.mx', $origenNuevo()), 'Reenvío');
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_RECIBIDA, $servicioSolicitud->reenviarVerificacion('nadie@ejemplo.mx', $origenNuevo()), 'Misma respuesta para un correo sin solicitud');
+        MarcoPruebas::afirmarIgual([], $buzon->mensajesPara('nadie@ejemplo.mx'), 'Sin correo para quien no solicitó');
+        $tokenNuevo = (string) $buzon->ultimoToken('beto@ejemplo.mx', '/verificar-solicitud');
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_VERIFICADA, $servicioSolicitud->verificarCorreo($tokenNuevo), 'Verificado');
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_ENLACE_INVALIDO, $servicioSolicitud->verificarCorreo($tokenNuevo), 'Segundo uso rechazado');
+    });
+
+    /* ======================== Revisión administrativa ======================== */
+
+    $marco->probar('P27', 'AC-06/RF-04/RF-05: aprobar crea cuenta INVITADA (rol USUARIO), registra revisor, fecha y método, y envía invitación', static function () use ($actor, $aprobar, $baseDatos, $buzon, $servicioSolicitud): void {
+        $paula = $actor('paula@ejemplo.mx');
+        $idSolicitud = (int) $baseDatos->obtenerFilaSolicitud('ana@ejemplo.mx')['id_solicitud_acceso'];
+        $sinConfirmar = $servicioSolicitud->aprobarSolicitud($paula, $idSolicitud, 'Cotejo con el padrón', false);
+        MarcoPruebas::afirmar(!$sinConfirmar['exito'], 'Exige confirmar la verificación de pertenencia');
+        $sinMetodo = $servicioSolicitud->aprobarSolicitud($paula, $idSolicitud, null, true);
+        MarcoPruebas::afirmar(!$sinMetodo['exito'], 'Exige registrar el método de verificación');
+
+        $resultado = $aprobar($paula, 'ana@ejemplo.mx');
+        MarcoPruebas::afirmar($resultado['exito'], $resultado['mensaje']);
+        MarcoPruebas::afirmar(str_contains($resultado['mensaje'], 'Se generó una invitación'), 'Mensaje de éxito real (el buzón recibió el correo)');
+        $cuenta = $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('INVITADA', $cuenta['estado_cuenta_usuario'], 'Cuenta INVITADA');
+        MarcoPruebas::afirmarIgual('USUARIO', $cuenta['rol_usuario'], 'Rol USUARIO');
+        MarcoPruebas::afirmarIgual(null, $cuenta['hash_contrasena_usuario'], 'El administrador no fija contraseña');
+        MarcoPruebas::afirmarIgual((int) $paula['id_usuario'], (int) $cuenta['id_usuario_autorizador'], 'Autorizador registrado');
+        MarcoPruebas::afirmarIgual('A2026001', $cuenta['identificador_institucional_usuario'], 'Identificador validado');
+        MarcoPruebas::afirmarIgual('Ana Alumna', $cuenta['nombre_usuario'], 'Nombre calculado por MariaDB (migración 003)');
+        $solicitud = $baseDatos->obtenerFilaSolicitud('ana@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('APROBADA', $solicitud['estado_solicitud'], 'Solicitud APROBADA');
+        MarcoPruebas::afirmarIgual((int) $paula['id_usuario'], (int) $solicitud['id_usuario_revisor'], 'Revisor');
+        MarcoPruebas::afirmar($solicitud['fecha_resolucion_solicitud'] !== null && $solicitud['metodo_verificacion_solicitud'] !== null, 'Fecha y método');
+        MarcoPruebas::afirmarIgual((int) $cuenta['id_usuario'], (int) $solicitud['id_usuario_vinculado'], 'Solicitud vinculada a la cuenta');
+        MarcoPruebas::afirmar($buzon->ultimoToken('ana@ejemplo.mx', '/activar-cuenta') !== null, 'Invitación con enlace de activación');
+        MarcoPruebas::afirmar(!str_contains(implode('', $buzon->mensajesPara('ana@ejemplo.mx')), 'Contraseña:'), 'La invitación no contiene contraseña');
+
+        $repetida = $aprobar($paula, 'ana@ejemplo.mx');
+        MarcoPruebas::afirmar(!$repetida['exito'] && str_contains($repetida['mensaje'], 'ya fue resuelta'), 'No se admiten decisiones duplicadas');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contar("SELECT COUNT(*) FROM usuario WHERE correo_electronico_usuario = 'ana@ejemplo.mx'"), 'Una sola cuenta');
+    });
+
+    $marco->probar('P29', 'AC-12: una cuenta INVITADA no inicia sesión y recibe la respuesta neutral', static function () use ($iniciarComo, $contrasenaComun): void {
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('ana@ejemplo.mx', $contrasenaComun), 'INVITADA rechazada');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('nadie@ejemplo.mx', $contrasenaComun), 'Igual que un correo inexistente');
+        MarcoPruebas::afirmar(!isset($_SESSION['idUsuario']), 'Sin sesión');
+    });
+
+    $marco->probar('P30b', 'AC-08: un enlace de activación vencido no activa; reenviar la invitación invalida el anterior', static function () use ($baseDatos, $buzon, $servicioCredenciales, $servicioSolicitud, $actor, $contrasenaComun): void {
+        $tokenVencido = (string) $buzon->ultimoToken('ana@ejemplo.mx', '/activar-cuenta');
+        $baseDatos->vencerTokens('token_cuenta');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_ENLACE_INVALIDO, $servicioCredenciales->activarCuenta($tokenVencido, $contrasenaComun)['resultado'], 'Vencido rechazado');
+        MarcoPruebas::afirmarIgual('INVITADA', $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['estado_cuenta_usuario'], 'El vencimiento no cambia el estado de la cuenta');
+
+        $reenvio = $servicioSolicitud->reenviarInvitacion($actor('paula@ejemplo.mx'), (int) $baseDatos->obtenerFilaSolicitud('ana@ejemplo.mx')['id_solicitud_acceso']);
+        MarcoPruebas::afirmar($reenvio['exito'], $reenvio['mensaje']);
+        $tokenNuevo = (string) $buzon->ultimoToken('ana@ejemplo.mx', '/activar-cuenta');
+        MarcoPruebas::afirmar($tokenNuevo !== $tokenVencido, 'Enlace nuevo');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_EXITO, $servicioCredenciales->activarCuenta($tokenNuevo, $contrasenaComun)['resultado'], 'Activación con el nuevo');
+        MarcoPruebas::afirmarIgual('ACTIVA', $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['estado_cuenta_usuario'], 'ACTIVA');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contarEventos('CUENTA_ACTIVADA') - 1, 'Activación auditada (además de la de Paula)');
+    });
+
+    $marco->probar('P31', 'AC-13: una cuenta ACTIVA inicia sesión con ID nuevo y solo permisos de USUARIO', static function () use ($reiniciarSesion, $servicioAutenticacion, $contrasenaComun, $gestorSesion, $roleMiddleware): void {
+        $reiniciarSesion();
+        $idSesionAnonima = session_id();
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $servicioAutenticacion->iniciarSesion('ana@ejemplo.mx', $contrasenaComun, '192.0.2.1'), 'Inicio de sesión');
+        MarcoPruebas::afirmar(session_id() !== $idSesionAnonima, 'El ID de sesión cambió (anti-fijación)');
+        MarcoPruebas::afirmar(!isset($_SESSION['rol']) && !isset($_SESSION['rolUsuario']), 'La sesión no almacena el rol');
+        $usuario = $gestorSesion->validarSesion();
+        MarcoPruebas::afirmarIgual('USUARIO', $usuario['rol_usuario'], 'Rol USUARIO');
+        foreach (['revisar_solicitudes', 'resolver_solicitud', 'administrar_cuentas', 'asignar_rol_administrativo'] as $permiso) {
+            MarcoPruebas::afirmar(!$roleMiddleware->tienePermiso($usuario['rol_usuario'], $permiso), "Sin {$permiso}");
+        }
+    });
+
+    $marco->probar('P07', 'SEG-06: credenciales incorrectas responden igual exista o no el correo', static function () use ($iniciarComo): void {
+        $resultadoContrasenaMala = $iniciarComo('ana@ejemplo.mx', 'contraseña equivocada larga');
+        $resultadoCorreoInexistente = $iniciarComo('nadie@ejemplo.mx', 'contraseña equivocada larga');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $resultadoContrasenaMala, 'Contraseña incorrecta');
+        MarcoPruebas::afirmarIgual($resultadoContrasenaMala, $resultadoCorreoInexistente, 'Mismo resultado para correo inexistente');
+        MarcoPruebas::afirmar(!isset($_SESSION['idUsuario']), 'No se creó sesión');
+    });
+
+    $marco->probar('P28', 'AC-07: rechazar exige motivo, no crea cuenta y una nueva solicitud no lo revierte en silencio', static function () use ($solicitar, $verificar, $actor, $servicioSolicitud, $baseDatos, $buzon): void {
+        $solicitar('Carlos', 'Cardenas', 'carlos@ejemplo.mx', 'PROFESOR', 'P2026003');
+        $verificar('carlos@ejemplo.mx');
+        $idSolicitud = (int) $baseDatos->obtenerFilaSolicitud('carlos@ejemplo.mx')['id_solicitud_acceso'];
+        $paula = $actor('paula@ejemplo.mx');
+        MarcoPruebas::afirmar(!$servicioSolicitud->rechazarSolicitud($paula, $idSolicitud, null)['exito'], 'Sin motivo no se rechaza');
+        $resultado = $servicioSolicitud->rechazarSolicitud($paula, $idSolicitud, 'No aparece en el padrón de personal vigente');
+        MarcoPruebas::afirmar($resultado['exito'], $resultado['mensaje']);
+        $solicitud = $baseDatos->obtenerFilaSolicitud('carlos@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('RECHAZADA', $solicitud['estado_solicitud'], 'RECHAZADA');
+        MarcoPruebas::afirmarIgual('No aparece en el padrón de personal vigente', $solicitud['motivo_resolucion_solicitud'], 'Motivo guardado');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaUsuario('carlos@ejemplo.mx'), 'No se creó cuenta');
+        $mensajes = $buzon->mensajesPara('carlos@ejemplo.mx');
+        MarcoPruebas::afirmar(str_contains(end($mensajes), 'no fue autorizada') && !str_contains(end($mensajes), 'padrón'), 'Aviso al solicitante sin revelar el motivo interno');
+
+        $solicitar('Carlos', 'Cardenas', 'carlos@ejemplo.mx', 'PROFESOR', 'P2026003');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contar("SELECT COUNT(*) FROM solicitud_acceso WHERE correo_electronico_solicitante = 'carlos@ejemplo.mx'"), 'No se crea otra solicitud');
+        MarcoPruebas::afirmarIgual('RECHAZADA', $baseDatos->obtenerFilaSolicitud('carlos@ejemplo.mx')['estado_solicitud'], 'El rechazo no cambia en silencio');
+    });
+
+    /* ============================ Roles y administración ============================ */
+
+    $marco->probar('P18', 'El principal asigna roles con re-autenticación, nunca el propio y solo a cuentas ACTIVAS', static function () use ($altaCompleta, $actor, $servicioAdministracion, $contrasenaPrincipal, $baseDatos, $solicitar, $verificar, $aprobar): void {
+        $paula = $actor('paula@ejemplo.mx');
+        $altaCompleta('Arturo', 'Admin', 'arturo@ejemplo.mx', 'PROFESOR', 'P2026004', $paula);
+        $idArturo = (int) $baseDatos->obtenerFilaUsuario('arturo@ejemplo.mx')['id_usuario'];
+
+        MarcoPruebas::afirmar(!$servicioAdministracion->cambiarRolUsuario($paula, $idArturo, 'ADMINISTRADOR', 'contraseña equivocada')['exito'], 'Sin re-autenticación no hay cambio');
+        MarcoPruebas::afirmar(!$servicioAdministracion->cambiarRolUsuario($paula, (int) $paula['id_usuario'], 'USUARIO', $contrasenaPrincipal)['exito'], 'No cambia su propio rol');
+        $resultado = $servicioAdministracion->cambiarRolUsuario($paula, $idArturo, 'ADMINISTRADOR', $contrasenaPrincipal);
+        MarcoPruebas::afirmar($resultado['exito'], $resultado['mensaje']);
+        MarcoPruebas::afirmarIgual('ADMINISTRADOR', $baseDatos->obtenerFilaUsuario('arturo@ejemplo.mx')['rol_usuario'], 'Arturo es ADMINISTRADOR');
+
+        $solicitar('Diana', 'Duarte', 'diana@ejemplo.mx', 'ALUMNO', 'A2026005');
+        $verificar('diana@ejemplo.mx');
+        $aprobar($paula, 'diana@ejemplo.mx');
+        $idDiana = (int) $baseDatos->obtenerFilaUsuario('diana@ejemplo.mx')['id_usuario'];
+        $invitada = $servicioAdministracion->cambiarRolUsuario($paula, $idDiana, 'ADMINISTRADOR', $contrasenaPrincipal);
+        MarcoPruebas::afirmar(!$invitada['exito'], 'No se da rol administrativo a una cuenta INVITADA');
+        MarcoPruebas::afirmarIgual('USUARIO', $baseDatos->obtenerFilaUsuario('diana@ejemplo.mx')['rol_usuario'], 'Diana sigue USUARIO');
+    });
+
+    $marco->probar('P12a', 'Un ADMINISTRADOR no puede cambiar roles ni restablecer segundos factores (servicio)', static function () use ($actor, $servicioAdministracion, $baseDatos, $contrasenaComun): void {
+        $arturo = $actor('arturo@ejemplo.mx');
+        $idAna = (int) $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['id_usuario'];
+        MarcoPruebas::afirmar(!$servicioAdministracion->cambiarRolUsuario($arturo, $idAna, 'ADMINISTRADOR_PRINCIPAL', $contrasenaComun)['exito'], 'Cambio de rol denegado');
+        MarcoPruebas::afirmarIgual('USUARIO', $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['rol_usuario'], 'Sin cambios');
+        $idPaula = (int) $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['id_usuario'];
+        MarcoPruebas::afirmar(!$servicioAdministracion->restablecerSegundoFactor($arturo, $idPaula, $contrasenaComun)['exito'], 'Restablecer segundo factor denegado');
+        MarcoPruebas::afirmar($baseDatos->contarEventos('INTENTO_CAMBIO_PRIVILEGIO_DENEGADO') >= 2, 'Intentos auditados');
+    });
+
+    $marco->probar('P34', 'Un administrador no resuelve una solicitud asociada a su propia identidad', static function () use ($actor, $servicioSolicitud, $baseDatos): void {
+        $conexion = $baseDatos->obtenerConexionAdministrativa();
+        $conexion->exec("INSERT INTO solicitud_acceso (nombres_solicitante, apellido_paterno_solicitante, correo_electronico_solicitante,
+            tipo_integrante_solicitado, identificador_institucional_solicitante, fecha_verificacion_correo_solicitud)
+            VALUES ('Arturo', 'Alterno', 'arturo.alterno@ejemplo.mx', 'PROFESOR', 'P2026004', NOW())");
+        $idSolicitud = (int) $conexion->lastInsertId();
+        $resultado = $servicioSolicitud->aprobarSolicitud($actor('arturo@ejemplo.mx'), $idSolicitud, 'Me conozco a mí mismo', true);
+        MarcoPruebas::afirmar(!$resultado['exito'] && str_contains($resultado['mensaje'], 'propia identidad'), 'Solicitud propia rechazada');
+        MarcoPruebas::afirmarIgual('PENDIENTE', $baseDatos->obtenerFilaSolicitud('arturo.alterno@ejemplo.mx')['estado_solicitud'], 'Sin cambios');
+        $conexion->exec("UPDATE solicitud_acceso SET estado_solicitud = 'RECHAZADA', id_usuario_revisor = 1, fecha_resolucion_solicitud = NOW(),
+            motivo_resolucion_solicitud = 'Limpieza de escenario de prueba' WHERE id_solicitud_acceso = {$idSolicitud}");
+    });
+
+    $marco->probar('P26b', 'SEG-08: el segundo factor no acepta códigos reutilizados y los códigos de recuperación sirven una vez', static function () use ($iniciarComo, $servicioSegundoFactor, $contrasenaPrincipal, &$secretosTotp, $codigoActual, $baseDatos, $gestorSesion): void {
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_REQUIERE_SEGUNDO_FACTOR, $iniciarComo('paula@ejemplo.mx', $contrasenaPrincipal), 'Pide el código');
+        $ultimoPaso = (int) $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['ultimo_paso_mfa_usuario'];
+        $codigoUsado = SegundoFactorTotp::calcularCodigo(SegundoFactorTotp::decodificarBase32($secretosTotp['paula@ejemplo.mx']), $ultimoPaso);
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_CODIGO_INVALIDO, $servicioSegundoFactor->verificarCodigo($codigoUsado, '192.0.2.250'), 'Código ya usado rechazado');
+        MarcoPruebas::afirmar(!isset($_SESSION['idUsuario']), 'Sin sesión');
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_EXITO, $servicioSegundoFactor->verificarCodigo($codigoActual($secretosTotp['paula@ejemplo.mx'], 1), '192.0.2.250'), 'Código siguiente aceptado');
+        MarcoPruebas::afirmar($gestorSesion->validarSesion() !== null, 'Sesión administrativa');
+
+        $codigoRecuperacion = strtolower((string) $GLOBALS['codigosRecuperacionPaula'][0]);
+        $iniciarComo('paula@ejemplo.mx', $contrasenaPrincipal);
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_EXITO, $servicioSegundoFactor->verificarCodigo($codigoRecuperacion, '192.0.2.250'), 'Código de recuperación (sin distinguir mayúsculas)');
+        $iniciarComo('paula@ejemplo.mx', $contrasenaPrincipal);
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_CODIGO_INVALIDO, $servicioSegundoFactor->verificarCodigo($codigoRecuperacion, '192.0.2.250'), 'No se reutiliza');
+        MarcoPruebas::afirmarIgual(CANTIDAD_CODIGOS_RECUPERACION_MFA - 1, $servicioSegundoFactor->contarCodigosDisponibles((int) $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['id_usuario']), 'Quedan 9');
+        $baseDatos->limpiarIntentos();
+    });
+
+    $marco->probar('P35', 'Sin segundo factor no hay sesión administrativa aunque se fuerce la sesión (defensa en profundidad)', static function () use ($reiniciarSesion, $gestorSesion, $usuarioModel): void {
+        $reiniciarSesion();
+        $gestorSesion->crearSesion((array) $usuarioModel->obtenerUsuarioPorId((int) $usuarioModel->obtenerUsuarioPorCorreo('arturo@ejemplo.mx')['id_usuario']), false);
+        MarcoPruebas::afirmarIgual(null, $gestorSesion->validarSesion(), 'Sesión administrativa sin segundo factor rechazada');
+        MarcoPruebas::afirmarIgual(GestorSesion::MOTIVO_SEGUNDO_FACTOR_REQUERIDO, $gestorSesion->obtenerMotivoUltimaExpiracion(), 'Motivo');
+    });
+
+    $marco->probar('P11a', 'AC-05/AC-15: un USUARIO recibe 403 en la bandeja y al aprobar; la solicitud no cambia', static function () use ($iniciarComo, $construirEnrutador, $solicitar, $verificar, $baseDatos): void {
+        $solicitar('Elena', 'Esquivel', 'elena@ejemplo.mx', 'ALUMNO', 'A2026006');
+        $verificar('elena@ejemplo.mx');
+        $idSolicitud = (string) $baseDatos->obtenerFilaSolicitud('elena@ejemplo.mx')['id_solicitud_acceso'];
+
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx'), 'Ana entra');
+        $enrutador = $construirEnrutador();
+        $token = ProtectorCsrf::generarTokenCsrf();
+        MarcoPruebas::afirmarExcepcionHttp(403, static fn () => $enrutador->despachar('GET', '/admin/solicitudes', []), 'Bandeja');
+        MarcoPruebas::afirmarExcepcionHttp(403, static fn () => $enrutador->despachar('GET', '/admin/solicitudes/detalle', ['id' => $idSolicitud]), 'Detalle');
+        MarcoPruebas::afirmarExcepcionHttp(403, static fn () => $enrutador->despachar('POST', '/admin/solicitudes/aprobar', [
+            'token_csrf' => $token, 'id_solicitud' => $idSolicitud, 'metodo_verificacion' => 'Yo misma', 'confirmacion_pertenencia' => 'si',
+        ]), 'Aprobar');
+        MarcoPruebas::afirmarExcepcionHttp(403, static fn () => $enrutador->despachar('GET', '/admin/roles', []), 'Sección del principal');
+        MarcoPruebas::afirmarExcepcionHttp(403, static fn () => $enrutador->despachar('GET', '/admin/bitacora', []), 'Bitácora');
+        MarcoPruebas::afirmarIgual('PENDIENTE', $baseDatos->obtenerFilaSolicitud('elena@ejemplo.mx')['estado_solicitud'], 'Solicitud sin cambios');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaUsuario('elena@ejemplo.mx'), 'Sin cuenta');
+    });
+
+    $marco->probar('P37', 'Un ADMINISTRADOR (con segundo factor) revisa solicitudes pero no abre la sección del principal', static function () use ($entrarConSegundoFactor, $construirEnrutador, $baseDatos, $contrasenaComun, $buzon): void {
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_EXITO, $entrarConSegundoFactor('arturo@ejemplo.mx', $contrasenaComun), 'Arturo configura su segundo factor y entra');
+        $enrutador = $construirEnrutador();
+        $bandeja = $enrutador->despachar('GET', '/admin/solicitudes', []);
+        MarcoPruebas::afirmarIgual(200, $bandeja->codigoEstado, 'Bandeja visible');
+        $correosBandeja = array_column($bandeja->datosVista['solicitudes'], 'correo_electronico_solicitante');
+        sort($correosBandeja);
+        MarcoPruebas::afirmarIgual(['beto@ejemplo.mx', 'elena@ejemplo.mx'], $correosBandeja, 'Solo las pendientes con correo verificado');
+        MarcoPruebas::afirmarExcepcionHttp(403, static fn () => $enrutador->despachar('GET', '/admin/roles', []), 'Roles: solo principal');
+
+        $respuesta = $enrutador->despachar('POST', '/admin/solicitudes/aprobar', [
+            'token_csrf' => ProtectorCsrf::generarTokenCsrf(),
+            'id_solicitud' => (string) $baseDatos->obtenerFilaSolicitud('elena@ejemplo.mx')['id_solicitud_acceso'],
+            'metodo_verificacion' => 'Cotejo con la lista de inscritos 2026-B',
+            'confirmacion_pertenencia' => 'si',
+        ]);
+        MarcoPruebas::afirmarIgual('/admin/solicitudes', $respuesta->rutaRedireccion, 'Vuelve a la bandeja');
+        MarcoPruebas::afirmarIgual('INVITADA', $baseDatos->obtenerFilaUsuario('elena@ejemplo.mx')['estado_cuenta_usuario'], 'Cuenta INVITADA creada');
+        MarcoPruebas::afirmar($buzon->ultimoToken('elena@ejemplo.mx', '/activar-cuenta') !== null, 'Invitación enviada');
+    });
+
+    $marco->probar('P33', 'AC-16/RF-08: suspender revoca la sesión abierta; la cuenta no entra ni se recupera hasta reactivarse', static function () use ($iniciarComo, $gestorSesion, $actor, $servicioAdministracion, $servicioCredenciales, $baseDatos, $buzon, $contrasenaComun): void {
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx'), 'Ana con sesión abierta');
+        $arturo = $actor('arturo@ejemplo.mx');
+        $idAna = (int) $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['id_usuario'];
+        MarcoPruebas::afirmar(!$servicioAdministracion->cambiarEstadoCuenta($arturo, $idAna, 'SUSPENDIDA', 'contraseña equivocada')['exito'], 'Exige re-autenticación');
+        $resultado = $servicioAdministracion->cambiarEstadoCuenta($arturo, $idAna, 'SUSPENDIDA', $contrasenaComun);
+        MarcoPruebas::afirmar($resultado['exito'], $resultado['mensaje']);
+        MarcoPruebas::afirmarIgual(null, $gestorSesion->validarSesion(), 'La cookie anterior ya no sirve');
+
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('ana@ejemplo.mx'), 'Suspendida no entra (respuesta neutral)');
+        $mensajesAntes = count($buzon->mensajesPara('ana@ejemplo.mx'));
+        $servicioCredenciales->solicitarRecuperacion('ana@ejemplo.mx', '192.0.2.40');
+        MarcoPruebas::afirmarIgual($mensajesAntes, count($buzon->mensajesPara('ana@ejemplo.mx')), 'SEG-14: recuperar no reactiva una cuenta suspendida');
+
+        $idPaula = (int) $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['id_usuario'];
+        MarcoPruebas::afirmar(!$servicioAdministracion->cambiarEstadoCuenta($arturo, $idPaula, 'SUSPENDIDA', $contrasenaComun)['exito'], 'Un ADMINISTRADOR no suspende al principal');
+        MarcoPruebas::afirmar(!$servicioAdministracion->cambiarEstadoCuenta($arturo, (int) $arturo['id_usuario'], 'BAJA', $contrasenaComun)['exito'], 'Nadie cambia su propio estado');
+
+        MarcoPruebas::afirmar($servicioAdministracion->cambiarEstadoCuenta($arturo, $idAna, 'ACTIVA', $contrasenaComun)['exito'], 'Reactivación autorizada');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx'), 'Vuelve a entrar');
+        MarcoPruebas::afirmarIgual(2, $baseDatos->contarEventos('CAMBIO_ESTADO_CUENTA'), 'Suspensión y reactivación auditadas');
+    });
+
+    $marco->probar('P36', 'La BAJA es definitiva y una invitación pendiente puede cancelarse', static function () use ($actor, $servicioAdministracion, $servicioCredenciales, $baseDatos, $buzon, $contrasenaPrincipal, $contrasenaComun): void {
+        $paula = $actor('paula@ejemplo.mx');
+        $idDiana = (int) $baseDatos->obtenerFilaUsuario('diana@ejemplo.mx')['id_usuario'];
+        $tokenDiana = (string) $buzon->ultimoToken('diana@ejemplo.mx', '/activar-cuenta');
+        MarcoPruebas::afirmar($servicioAdministracion->cambiarEstadoCuenta($paula, $idDiana, 'BAJA', $contrasenaPrincipal)['exito'], 'INVITADA -> BAJA');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_ENLACE_INVALIDO, $servicioCredenciales->activarCuenta($tokenDiana, $contrasenaComun)['resultado'], 'Su invitación dejó de servir');
+        MarcoPruebas::afirmar(!$servicioAdministracion->cambiarEstadoCuenta($paula, $idDiana, 'ACTIVA', $contrasenaPrincipal)['exito'], 'BAJA -> ACTIVA no permitido');
+        MarcoPruebas::afirmarIgual('BAJA', $baseDatos->obtenerFilaUsuario('diana@ejemplo.mx')['estado_cuenta_usuario'], 'Sigue en BAJA (se conserva para auditoría)');
+    });
+
+    /* ================================ Recuperación ================================ */
+
+    $marco->probar('P32', 'AC-17/AC-18/RF-07: recuperación neutral, enlace de un uso que vence y revoca las sesiones', static function () use ($servicioCredenciales, $buzon, $baseDatos, $iniciarComo, $gestorSesion, $contrasenaComun): void {
+        $baseDatos->limpiarIntentos();
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx'), 'Sesión abierta antes de recuperar');
+        $resultadoExistente = $servicioCredenciales->solicitarRecuperacion('ana@ejemplo.mx', '192.0.2.41');
+        $resultadoInexistente = $servicioCredenciales->solicitarRecuperacion('fantasma@ejemplo.mx', '192.0.2.41');
+        MarcoPruebas::afirmarIgual($resultadoExistente, $resultadoInexistente, 'Mismo resultado exista o no');
+        MarcoPruebas::afirmarIgual([], $buzon->mensajesPara('fantasma@ejemplo.mx'), 'Nada se envía a un correo sin cuenta');
+        $token = (string) $buzon->ultimoToken('ana@ejemplo.mx', '/restablecer-contrasena');
+        MarcoPruebas::afirmar(GeneradorTokens::esFormatoValido($token), 'Enlace de recuperación para la cuenta real');
+
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_ENLACE_INVALIDO, $servicioCredenciales->activarCuenta($token, 'otra frase segura para activar')['resultado'], 'Un enlace de recuperación no sirve para activar (finalidad separada)');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_CONTRASENA_RECHAZADA, $servicioCredenciales->restablecerContrasena($token, 'passwordpassword')['resultado'], 'Contraseña bloqueada');
+        $contrasenaNueva = 'las olas llegan suaves al amanecer';
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_EXITO, $servicioCredenciales->restablecerContrasena($token, $contrasenaNueva)['resultado'], 'Restablecida');
+        MarcoPruebas::afirmarIgual(null, $gestorSesion->validarSesion(), 'La sesión abierta se revocó');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_ENLACE_INVALIDO, $servicioCredenciales->restablecerContrasena($token, 'otra frase nueva y distinta')['resultado'], 'AC-18: enlace usado no se reutiliza');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('ana@ejemplo.mx', $contrasenaComun), 'La contraseña anterior ya no sirve');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx', $contrasenaNueva), 'La nueva sí');
+
+        $servicioCredenciales->solicitarRecuperacion('ana@ejemplo.mx', '192.0.2.42');
+        $tokenVencido = (string) $buzon->ultimoToken('ana@ejemplo.mx', '/restablecer-contrasena');
+        $baseDatos->vencerTokens('token_cuenta');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_ENLACE_INVALIDO, $servicioCredenciales->restablecerContrasena($tokenVencido, 'frase que no llega a guardarse')['resultado'], 'AC-18: enlace vencido rechazado');
+        $baseDatos->obtenerConexionAdministrativa()->prepare('UPDATE usuario SET hash_contrasena_usuario = ? WHERE correo_electronico_usuario = ?')
+            ->execute([GestorContrasenas::generarHash($contrasenaComun), 'ana@ejemplo.mx']);
+    });
+
+    $marco->probar('P38', 'INVITADA que perdió su enlace: "¿Olvidó su contraseña?" le envía una activación nueva', static function () use ($servicioCredenciales, $buzon, $baseDatos, $contrasenaComun): void {
+        $tokenAnterior = (string) $buzon->ultimoToken('elena@ejemplo.mx', '/activar-cuenta');
+        $servicioCredenciales->solicitarRecuperacion('elena@ejemplo.mx', '192.0.2.43');
+        $tokenNuevo = (string) $buzon->ultimoToken('elena@ejemplo.mx', '/activar-cuenta');
+        MarcoPruebas::afirmar($tokenNuevo !== $tokenAnterior, 'Enlace de activación nuevo');
+        MarcoPruebas::afirmarIgual(null, $buzon->ultimoToken('elena@ejemplo.mx', '/restablecer-contrasena'), 'No se envía recuperación a una cuenta sin contraseña');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_ENLACE_INVALIDO, $servicioCredenciales->activarCuenta($tokenAnterior, $contrasenaComun)['resultado'], 'El anterior quedó invalidado');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_EXITO, $servicioCredenciales->activarCuenta($tokenNuevo, $contrasenaComun)['resultado'], 'Activación con el nuevo');
+        MarcoPruebas::afirmarIgual('ACTIVA', $baseDatos->obtenerFilaUsuario('elena@ejemplo.mx')['estado_cuenta_usuario'], 'ACTIVA');
+    });
+
+    /* ============================ Sesiones y límites ============================ */
+
+    $marco->probar('P08a', 'Cerrar sesión elimina la sesión del servidor', static function () use ($servicioAutenticacion, $iniciarComo, $usuarioModel): void {
+        $iniciarComo('ana@ejemplo.mx');
+        $idSesionAutenticada = session_id();
+        $archivoSesion = session_save_path() . DIRECTORY_SEPARATOR . 'sess_' . $idSesionAutenticada;
+        session_write_close();
+        MarcoPruebas::afirmar(is_file($archivoSesion), 'Existía el archivo de sesión');
+        GestorSesion::iniciarSesionPhp();
+        $servicioAutenticacion->cerrarSesion($usuarioModel->obtenerUsuarioPorCorreo('ana@ejemplo.mx'));
+        clearstatcache();
+        MarcoPruebas::afirmar(!is_file($archivoSesion), 'El archivo de la sesión anterior fue destruido');
+        MarcoPruebas::afirmar(session_id() !== $idSesionAutenticada, 'Nuevo ID anónimo');
+        MarcoPruebas::afirmar(!isset($_SESSION['idUsuario']), 'Sin usuario en la sesión nueva');
+    });
+
+    $marco->probar('P20', 'SEG-10: expiración por inactividad y por duración máxima', static function () use ($iniciarComo, $gestorSesion): void {
+        $iniciarComo('ana@ejemplo.mx');
+        $_SESSION['ultimaActividad'] = time() - TIEMPO_INACTIVIDAD_SESION_SEGUNDOS - 1;
+        MarcoPruebas::afirmarIgual(null, $gestorSesion->validarSesion(), 'Sesión inactiva rechazada');
+        MarcoPruebas::afirmarIgual(GestorSesion::MOTIVO_INACTIVIDAD, $gestorSesion->obtenerMotivoUltimaExpiracion(), 'Motivo');
+        $iniciarComo('ana@ejemplo.mx');
+        $_SESSION['fechaCreacion'] = time() - DURACION_MAXIMA_SESION_SEGUNDOS - 1;
+        MarcoPruebas::afirmarIgual(null, $gestorSesion->validarSesion(), 'Sesión demasiado antigua rechazada');
+        MarcoPruebas::afirmarIgual(GestorSesion::MOTIVO_DURACION_MAXIMA, $gestorSesion->obtenerMotivoUltimaExpiracion(), 'Motivo');
+        $iniciarComo('ana@ejemplo.mx');
+        MarcoPruebas::afirmar($gestorSesion->validarSesion() !== null, 'Sesión vigente aceptada');
+    });
+
+    $marco->probar('P17a', 'Revocar un rol administrativo invalida la sesión abierta del afectado', static function () use ($entrarConSegundoFactor, $gestorSesion, $servicioAdministracion, $actor, $contrasenaComun, $contrasenaPrincipal, $baseDatos): void {
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_EXITO, $entrarConSegundoFactor('arturo@ejemplo.mx', $contrasenaComun), 'Arturo con sesión administrativa');
+        MarcoPruebas::afirmar($gestorSesion->validarSesion() !== null, 'Sesión válida');
+        $resultado = $servicioAdministracion->cambiarRolUsuario($actor('paula@ejemplo.mx'), (int) $baseDatos->obtenerFilaUsuario('arturo@ejemplo.mx')['id_usuario'], 'USUARIO', $contrasenaPrincipal);
+        MarcoPruebas::afirmar($resultado['exito'], $resultado['mensaje']);
+        MarcoPruebas::afirmarIgual(null, $gestorSesion->validarSesion(), 'La sesión de Arturo se invalidó');
+        MarcoPruebas::afirmarIgual(GestorSesion::MOTIVO_VERSION_CAMBIADA, $gestorSesion->obtenerMotivoUltimaExpiracion(), 'Por cambio de privilegios');
+    });
+
+    $marco->probar('P15', 'AC-21/SEG-07: límites por cuenta y por origen sin bloquear a todo el salón', static function () use ($iniciarComo, $reiniciarSesion, $servicioAutenticacion, $servicioSolicitud, $datosSolicitud, $contrasenaComun, $baseDatos): void {
+        $baseDatos->limpiarIntentos();
+        $reiniciarSesion();
+        for ($intento = 1; $intento <= MAX_INTENTOS_LOGIN; $intento++) {
+            $servicioAutenticacion->iniciarSesion('ana@ejemplo.mx', 'contraseña equivocada larga', '198.51.100.' . $intento);
+        }
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_LIMITE_ALCANZADO, $servicioAutenticacion->iniciarSesion('ana@ejemplo.mx', $contrasenaComun, '198.51.100.99'), 'Cuenta limitada aunque cambie la IP');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $servicioAutenticacion->iniciarSesion('elena@ejemplo.mx', $contrasenaComun, '198.51.100.1'), 'Otra persona del mismo salón sí entra');
+        $baseDatos->obtenerConexionAdministrativa()->exec('UPDATE intento_acceso SET fecha_intento_acceso = NOW() - INTERVAL ' . (VENTANA_INTENTOS_SEGUNDOS + 60) . ' SECOND');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx'), 'Al salir de la ventana vuelve a entrar (sin bloqueo permanente)');
+
+        $baseDatos->limpiarIntentos();
+        $resultados = [];
+        for ($envio = 1; $envio <= MAX_ENVIOS_FORMULARIO_CORREO + 1; $envio++) {
+            $resultados[] = $servicioSolicitud->registrarSolicitud($datosSolicitud('Fabio', 'Flores', 'fabio@ejemplo.mx', 'ALUMNO', 'A2026007'), '203.0.113.' . $envio);
+        }
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_LIMITE_ALCANZADO, end($resultados), 'Solicitudes repetidas del mismo correo se limitan');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contar("SELECT COUNT(*) FROM solicitud_acceso WHERE correo_electronico_solicitante = 'fabio@ejemplo.mx'"), 'Y no se duplican');
+        for ($companero = 1; $companero <= 5; $companero++) {
+            MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_RECIBIDA,
+                $servicioSolicitud->registrarSolicitud($datosSolicitud('Alumno', 'Salon', "salon{$companero}@ejemplo.mx", 'ALUMNO', "S{$companero}000"), '203.0.113.200'),
+                "Compañero {$companero} desde la misma IP del salón");
+        }
+        MarcoPruebas::afirmar($baseDatos->contarEventos('LOGIN_BLOQUEADO') >= 1 && $baseDatos->contarEventos('SOLICITUD_LIMITADA') >= 1, 'Límites auditados');
+        $baseDatos->limpiarIntentos();
+    });
+
+    $marco->probar('P14b', 'AC-20: entradas con comillas o SQL se guardan como datos o se rechazan', static function () use ($servicioAutenticacion, $reiniciarSesion, $usuarioModel, $solicitar, $baseDatos): void {
+        $totalAntes = $baseDatos->contar('SELECT COUNT(*) FROM usuario');
+        $reiniciarSesion();
+        foreach (["' OR '1'='1' -- ", "ana@ejemplo.mx' -- ", "x'; DROP TABLE usuario; -- "] as $correoMalicioso) {
+            MarcoPruebas::afirmarIgual(null, $usuarioModel->obtenerUsuarioPorCorreo($correoMalicioso), 'Sin coincidencias para ' . $correoMalicioso);
+            MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $servicioAutenticacion->iniciarSesion($correoMalicioso, "' OR '1'='1", '192.0.2.3'), 'Login rechazado');
+        }
+        $solicitar("Seán O'Brien", "D'Arcy", 'obrien@ejemplo.mx', 'ALUMNO', 'A2026008');
+        $solicitud = $baseDatos->obtenerFilaSolicitud('obrien@ejemplo.mx');
+        MarcoPruebas::afirmarIgual("Seán O'Brien", $solicitud['nombres_solicitante'], 'Apóstrofos guardados literalmente');
+        $resultados = (new SolicitudAccesoModel(obtenerConexionBaseDatos()))->listarSolicitudes('RECHAZADA', null, "%' OR '1'='1");
+        MarcoPruebas::afirmarIgual([], $resultados, 'La búsqueda trata comodines y comillas como texto');
+        MarcoPruebas::afirmarIgual($totalAntes, $baseDatos->contar('SELECT COUNT(*) FROM usuario'), 'La tabla usuario sigue intacta');
+    });
+
+    /* ================================ Enrutador ================================ */
+
+    $marco->probar('P09a', 'Enrutador: rutas protegidas sin sesión responden 401; inexistentes 404; método 405', static function () use ($construirEnrutador, $reiniciarSesion): void {
+        $reiniciarSesion();
+        $enrutador = $construirEnrutador();
+        foreach (['/inicio', '/admin/solicitudes', '/admin/usuarios', '/admin/roles', '/admin/bitacora', '/codigos-recuperacion'] as $ruta) {
+            MarcoPruebas::afirmarExcepcionHttp(401, static fn () => $enrutador->despachar('GET', $ruta, []), "GET {$ruta}");
+        }
+        MarcoPruebas::afirmarExcepcionHttp(401, static fn () => $enrutador->despachar('POST', '/admin/roles/cambiar', ['id_usuario' => '1', 'rol_nuevo' => 'ADMINISTRADOR']), 'POST rol');
+        MarcoPruebas::afirmarExcepcionHttp(404, static fn () => $enrutador->despachar('GET', '/no-existe', []), 'Ruta inexistente');
+        MarcoPruebas::afirmarExcepcionHttp(405, static fn () => $enrutador->despachar('POST', '/registro', []), 'El registro abierto ya no acepta envíos');
+        MarcoPruebas::afirmarExcepcionHttp(405, static fn () => $enrutador->despachar('GET', '/cerrar-sesion', []), 'Método no permitido');
+        MarcoPruebas::afirmarIgual('/solicitar-acceso', $enrutador->despachar('GET', '/registro', [])->rutaRedireccion, 'La ruta anterior lleva al nuevo formulario');
+    });
+
+    $marco->probar('P10a', 'AC-02/SEG-01: una solicitud con rol o estado adulterados se rechaza (400), se audita y no se guarda', static function () use ($construirEnrutador, $reiniciarSesion, $baseDatos): void {
+        $reiniciarSesion();
+        $enrutador = $construirEnrutador();
+        $datosManipulados = [
+            'token_csrf' => ProtectorCsrf::generarTokenCsrf(), 'nombres' => 'Mallory', 'apellido_paterno' => 'Atacante',
+            'tipo_integrante' => 'PROFESOR', 'identificador_institucional' => 'P6666', 'correo_electronico' => 'mallory@ejemplo.mx',
+            'rol_usuario' => 'ADMINISTRADOR_PRINCIPAL', 'estado_cuenta_usuario' => 'ACTIVA', 'solicitud_aprobada' => '1',
+        ];
+        MarcoPruebas::afirmarExcepcionHttp(400, static fn () => $enrutador->despachar('POST', '/solicitar-acceso', $datosManipulados), 'Rechazo 400');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaSolicitud('mallory@ejemplo.mx'), 'No se guardó la solicitud');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaUsuario('mallory@ejemplo.mx'), 'No se creó cuenta');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contarEventos('INTENTO_ESCALADA_FORMULARIO'), 'Intento auditado');
+
+        $sinToken = $datosManipulados;
+        unset($sinToken['rol_usuario'], $sinToken['estado_cuenta_usuario'], $sinToken['solicitud_aprobada']);
+        $sinToken['token_csrf'] = 'token-falso';
+        MarcoPruebas::afirmarExcepcionHttp(400, static fn () => $enrutador->despachar('POST', '/solicitar-acceso', $sinToken), 'AC-19: sin CSRF válido');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaSolicitud('mallory@ejemplo.mx'), 'Sin cambios');
+    });
+
+    $marco->probar('P23', 'Verificación de profesor (cuentas anteriores a la 004): solo administradores, sin cambiar el rol', static function () use ($servicioAdministracion, $actor, $baseDatos): void {
+        $baseDatos->obtenerConexionAdministrativa()->exec("INSERT INTO usuario (nombres_usuario, apellido_paterno_usuario, correo_electronico_usuario,
+            hash_contrasena_usuario, tipo_integrante_usuario, estado_verificacion_usuario) VALUES ('Gilda', 'Previa', 'gilda@ejemplo.mx', '!', 'PROFESOR', 'PENDIENTE')");
+        $idGilda = (int) $baseDatos->obtenerFilaUsuario('gilda@ejemplo.mx')['id_usuario'];
+        MarcoPruebas::afirmar(!$servicioAdministracion->resolverVerificacion($actor('ana@ejemplo.mx'), $idGilda, 'VERIFICADA')['exito'], 'Un USUARIO no verifica');
+        MarcoPruebas::afirmar($servicioAdministracion->resolverVerificacion($actor('paula@ejemplo.mx'), $idGilda, 'VERIFICADA')['exito'], 'El principal sí');
+        $fila = $baseDatos->obtenerFilaUsuario('gilda@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('VERIFICADA', $fila['estado_verificacion_usuario'], 'Verificada');
+        MarcoPruebas::afirmarIgual('USUARIO', $fila['rol_usuario'], 'Sin permisos adicionales');
+    });
+
+    /* ===================== Revisión de Codex: R-01 a R-08 ===================== */
+
+    $marco->probar('R01', 'R-01: un principal con permiso ya revocado no puede completar una operación iniciada antes', static function () use ($actor, $servicioAdministracion, $baseDatos, $contrasenaPrincipal, $contrasenaComun, $usuarioModel): void {
+        $baseDatos->limpiarIntentos();
+        $paula = $actor('paula@ejemplo.mx');
+        $idAna = (int) $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['id_usuario'];
+        $idPaula = (int) $paula['id_usuario'];
+        MarcoPruebas::afirmar($servicioAdministracion->cambiarRolUsuario($paula, $idAna, 'ADMINISTRADOR_PRINCIPAL', $contrasenaPrincipal)['exito'], 'Ana pasa a principal');
+
+        // La petición de Ana ya pasó la verificación de la ruta con este estado...
+        $anaAlIniciar = $actor('ana@ejemplo.mx');
+        // ...pero antes de que llegue a su transacción, Paula la degrada.
+        MarcoPruebas::afirmar($servicioAdministracion->cambiarRolUsuario($actor('paula@ejemplo.mx'), $idAna, 'USUARIO', $contrasenaPrincipal)['exito'], 'Paula degrada a Ana');
+        $resultado = $servicioAdministracion->cambiarRolUsuario($anaAlIniciar, $idPaula, 'USUARIO', $contrasenaComun);
+        MarcoPruebas::afirmar(!$resultado['exito'] && str_contains($resultado['mensaje'], 'Sus permisos cambiaron'), 'La operación de Ana se rechaza dentro de la transacción');
+        MarcoPruebas::afirmarIgual('ADMINISTRADOR_PRINCIPAL', $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['rol_usuario'], 'Paula sigue siendo principal');
+        MarcoPruebas::afirmarIgual(1, $usuarioModel->contarOtrosPrincipalesActivos(0), 'Queda exactamente un principal activo');
+        $estadoAnulado = $servicioAdministracion->cambiarEstadoCuenta($anaAlIniciar, $idPaula, 'SUSPENDIDA', $contrasenaComun);
+        MarcoPruebas::afirmar(!$estadoAnulado['exito'], 'Tampoco puede suspenderla con el permiso viejo');
+        MarcoPruebas::afirmarIgual('ACTIVA', $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['estado_cuenta_usuario'], 'Paula sigue ACTIVA');
+        MarcoPruebas::afirmarIgual(0, $baseDatos->contar("SELECT COUNT(*) FROM token_cuenta WHERE id_usuario_destinatario = {$idAna} AND finalidad_token_cuenta = 'ENROLAMIENTO_MFA' AND fecha_consumo_token_cuenta IS NULL"), 'Al degradarla se invalidó su enlace de configuración');
+    });
+
+    $marco->probar('R02', 'R-02: configurar el segundo factor exige el enlace del correo de la propia cuenta; el restablecimiento emite uno nuevo', static function () use ($actor, $servicioAdministracion, $servicioSegundoFactor, $baseDatos, $buzon, $iniciarComo, $codigoActual, $contrasenaPrincipal, $gestorSesion): void {
+        $baseDatos->limpiarIntentos();
+        $idElena = (int) $baseDatos->obtenerFilaUsuario('elena@ejemplo.mx')['id_usuario'];
+        $promocion = $servicioAdministracion->cambiarRolUsuario($actor('paula@ejemplo.mx'), $idElena, 'ADMINISTRADOR', $contrasenaPrincipal);
+        MarcoPruebas::afirmar($promocion['exito'] && str_contains($promocion['mensaje'], 'buzón de pruebas'), 'Promoción con aviso honesto del envío: ' . $promocion['mensaje']);
+        $enlacePromocion = (string) $buzon->ultimoToken('elena@ejemplo.mx', '/configurar-segundo-factor');
+        MarcoPruebas::afirmar(GeneradorTokens::esFormatoValido($enlacePromocion), 'El enlace llegó al correo de Elena');
+
+        // Atacante: conoce la contraseña de Elena pero no su correo.
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_REQUIERE_CONFIGURAR_SEGUNDO_FACTOR, $iniciarComo('elena@ejemplo.mx'), 'Contraseña correcta');
+        MarcoPruebas::afirmarIgual(null, $servicioSegundoFactor->prepararConfiguracion(), 'Sin enlace no hay secreto');
+        $tokenAjeno = $servicioSegundoFactor->emitirEnlaceEnrolamiento((int) $baseDatos->obtenerFilaUsuario('arturo@ejemplo.mx')['id_usuario']);
+        $gestorSesion->guardarTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO, $tokenAjeno);
+        MarcoPruebas::afirmar(!$servicioSegundoFactor->tieneAutorizacionEnrolamiento(), 'El enlace de OTRA cuenta no sirve');
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_SIN_AUTORIZACION, $servicioSegundoFactor->confirmarConfiguracion('123456', '192.0.2.60')['resultado'], 'No puede confirmar');
+        MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaUsuario('elena@ejemplo.mx')['secreto_mfa_usuario'], 'Ningún secreto guardado');
+
+        // "Enviarme un enlace nuevo" solo llega al correo de la cuenta y deja sin efecto el anterior.
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_ENLACE_ENVIADO, $servicioSegundoFactor->solicitarEnlaceEnrolamiento('192.0.2.60'), 'Reenvío al correo de la cuenta');
+        $enlaceNuevo = (string) $buzon->ultimoToken('elena@ejemplo.mx', '/configurar-segundo-factor');
+        MarcoPruebas::afirmar($enlaceNuevo !== $enlacePromocion, 'Enlace nuevo');
+        $gestorSesion->guardarTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO, $enlacePromocion);
+        MarcoPruebas::afirmar(!$servicioSegundoFactor->tieneAutorizacionEnrolamiento(), 'El enlace anterior ya no sirve');
+
+        // La titular abre su enlace vigente y configura.
+        $gestorSesion->guardarTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO, $enlaceNuevo);
+        $configuracion = $servicioSegundoFactor->prepararConfiguracion();
+        MarcoPruebas::afirmar($configuracion !== null, 'Con su enlace sí puede');
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_EXITO, $servicioSegundoFactor->confirmarConfiguracion($codigoActual($configuracion['secreto']), '192.0.2.60')['resultado'], 'Configurado');
+        MarcoPruebas::afirmarIgual(0, $baseDatos->contar("SELECT COUNT(*) FROM token_cuenta WHERE id_usuario_destinatario = {$idElena} AND finalidad_token_cuenta = 'ENROLAMIENTO_MFA' AND fecha_consumo_token_cuenta IS NULL"), 'El enlace se consumió');
+
+        // Restablecer el factor: deja a la cuenta otra vez sin factor, pero con un enlace NUEVO enviado a su correo.
+        $restablecido = $servicioAdministracion->restablecerSegundoFactor($actor('paula@ejemplo.mx'), $idElena, $contrasenaPrincipal);
+        MarcoPruebas::afirmar($restablecido['exito'], $restablecido['mensaje']);
+        $enlaceRestablecido = (string) $buzon->ultimoToken('elena@ejemplo.mx', '/configurar-segundo-factor');
+        MarcoPruebas::afirmar($enlaceRestablecido !== $enlaceNuevo && GeneradorTokens::esFormatoValido($enlaceRestablecido), 'Enlace nuevo tras restablecer');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_REQUIERE_CONFIGURAR_SEGUNDO_FACTOR, $iniciarComo('elena@ejemplo.mx'), 'Debe volver a configurar');
+        $gestorSesion->guardarTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO, $enlaceNuevo);
+        MarcoPruebas::afirmar(!$servicioSegundoFactor->tieneAutorizacionEnrolamiento(), 'El enlace usado antes no vuelve a servir');
+
+        MarcoPruebas::afirmar($servicioAdministracion->cambiarRolUsuario($actor('paula@ejemplo.mx'), $idElena, 'USUARIO', $contrasenaPrincipal)['exito'], 'Elena vuelve a USUARIO');
+        $baseDatos->limpiarIntentos();
+    });
+
+    $marco->probar('R03', 'R-03: una cuenta heredada sin validación institucional no entra hasta que un administrador la valida', static function () use ($baseDatos, $iniciarComo, $actor, $servicioAdministracion, $contrasenaComun, $contrasenaPrincipal): void {
+        $conexion = $baseDatos->obtenerConexionAdministrativa();
+        $hash = GestorContrasenas::generarHash($contrasenaComun);
+        $conexion->prepare("INSERT INTO usuario (nombres_usuario, apellido_paterno_usuario, correo_electronico_usuario, hash_contrasena_usuario, estado_cuenta_usuario)
+            VALUES ('Hugo', 'Heredado', 'hugo@ejemplo.mx', ?, 'ACTIVA')")->execute([$hash]);
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('hugo@ejemplo.mx'), 'ACTIVA sin validación institucional: no entra');
+
+        $conexion->exec("UPDATE usuario SET estado_cuenta_usuario = 'SUSPENDIDA' WHERE correo_electronico_usuario = 'hugo@ejemplo.mx'");
+        $idHugo = (int) $baseDatos->obtenerFilaUsuario('hugo@ejemplo.mx')['id_usuario'];
+        $paula = $actor('paula@ejemplo.mx');
+        $resultado = $servicioAdministracion->cambiarEstadoCuenta($paula, $idHugo, 'ACTIVA', $contrasenaPrincipal);
+        MarcoPruebas::afirmar($resultado['exito'] && str_contains($resultado['mensaje'], 'validada'), $resultado['mensaje']);
+        $fila = $baseDatos->obtenerFilaUsuario('hugo@ejemplo.mx');
+        MarcoPruebas::afirmar($fila['fecha_validacion_institucional_usuario'] !== null, 'Se registró la validación');
+        MarcoPruebas::afirmarIgual((int) $paula['id_usuario'], (int) $fila['id_usuario_autorizador'], 'Y quién la autorizó');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contarEventos('VALIDACION_CUENTA_HEREDADA'), 'Auditado');
+        // La contraseña del registro anterior no se conserva: crea una nueva con el enlace (prueba R10).
+        MarcoPruebas::afirmarIgual('INVITADA', $fila['estado_cuenta_usuario'], 'Ya validada, queda por activar con una contraseña nueva');
+    });
+
+    $marco->probar('R03b', 'R-03/R-08: migración 005, su reversión y la precondición ejecutable de la reversión 004', static function () use ($baseDatos): void {
+        $conexion = $baseDatos->obtenerConexionAdministrativa();
+        $base = 'papc_migracion_pruebas';
+        $conexion->exec("DROP DATABASE IF EXISTS `{$base}`");
+        $conexion->exec("CREATE DATABASE `{$base}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        $conexion->exec("USE `{$base}`");
+        $aplicar = static function (string $archivo) use ($conexion): void {
+            $conexion->exec((string) file_get_contents(RUTA_RAIZ . '/database/' . $archivo));
+        };
+        try {
+            foreach (['schema.sql', 'migraciones/001-clasificacion-usuario.sql', 'migraciones/002-intento-acceso.sql', 'migraciones/003-nombre-atomico-usuario.sql'] as $archivo) {
+                $aplicar($archivo);
+            }
+            $conexion->exec("INSERT INTO usuario (nombres_usuario, apellido_paterno_usuario, correo_electronico_usuario, hash_contrasena_usuario)
+                VALUES ('Lalo', 'Legado', 'lalo@x.mx', '\$argon2id\$x'), ('Lola', 'Legado', 'lola@x.mx', '\$argon2id\$y')");
+            $aplicar('migraciones/004-solicitud-acceso-activacion.sql');
+            $aplicar('migraciones/005-transicion-cuentas-y-enrolamiento.sql');
+            $estados = $conexion->query('SELECT estado_cuenta_usuario FROM usuario ORDER BY id_usuario')->fetchAll(PDO::FETCH_COLUMN);
+            MarcoPruebas::afirmarIgual(['SUSPENDIDA', 'SUSPENDIDA'], $estados, 'Las cuentas heredadas quedan SUSPENDIDAS (sin borrar datos)');
+            MarcoPruebas::afirmarIgual(2, (int) $conexion->query("SELECT COUNT(*) FROM auditoria WHERE accion_auditoria = 'SUSPENSION_TRANSICION_005'")->fetchColumn(), 'Cada suspensión queda auditada');
+            $conexion->exec("INSERT INTO usuario (nombres_usuario, correo_electronico_usuario, hash_contrasena_usuario) VALUES ('Nuevo', 'nuevo@x.mx', '\$argon2id\$z')");
+            MarcoPruebas::afirmarIgual('INVITADA', $conexion->query("SELECT estado_cuenta_usuario FROM usuario WHERE correo_electronico_usuario = 'nuevo@x.mx'")->fetchColumn(), 'Una inserción sin estado no queda ACTIVA');
+            $conexion->exec("DELETE FROM usuario WHERE correo_electronico_usuario = 'nuevo@x.mx'");
+
+            // Un administrador revisó a Lola y la volvió a suspender: la reversión no debe reactivarla.
+            $conexion->exec("INSERT INTO auditoria (accion_auditoria, entidad_afectada_auditoria, id_registro_afectado) SELECT 'CAMBIO_ESTADO_CUENTA', 'usuario', id_usuario FROM usuario WHERE correo_electronico_usuario = 'lola@x.mx'");
+            $aplicar('migraciones/005-transicion-cuentas-y-enrolamiento-revertir.sql');
+            $estados = $conexion->query('SELECT estado_cuenta_usuario FROM usuario ORDER BY id_usuario')->fetchAll(PDO::FETCH_COLUMN);
+            MarcoPruebas::afirmarIgual(['ACTIVA', 'SUSPENDIDA'], $estados, 'Revertir 005 reactiva solo lo que ella suspendió');
+
+            $fallo = null;
+            try {
+                $aplicar('migraciones/004-solicitud-acceso-activacion-revertir.sql');
+            } catch (PDOException $excepcion) {
+                $fallo = $excepcion->getMessage();
+            }
+            MarcoPruebas::afirmar($fallo !== null && str_contains($fallo, 'chk_reversion_cuentas_restringidas'), 'R-08: la reversión 004 se detiene con una cuenta suspendida utilizable');
+            MarcoPruebas::afirmarIgual(1, (int) $conexion->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '{$base}' AND table_name = 'solicitud_acceso'")->fetchColumn(), 'Y no borró nada');
+
+            $aplicar('migraciones/004-preparar-reversion.sql');
+            $aplicar('migraciones/004-solicitud-acceso-activacion-revertir.sql');
+            $hashes = $conexion->query('SELECT correo_electronico_usuario, hash_contrasena_usuario FROM usuario ORDER BY id_usuario')->fetchAll(PDO::FETCH_KEY_PAIR);
+            MarcoPruebas::afirmarIgual('!', $hashes['lola@x.mx'], 'Tras la preparación autorizada, la cuenta suspendida no puede entrar con el código anterior');
+            MarcoPruebas::afirmar(str_starts_with($hashes['lalo@x.mx'], '$argon2id$'), 'La cuenta activa conserva su contraseña');
+            MarcoPruebas::afirmarIgual(1, (int) $conexion->query("SELECT COUNT(*) FROM auditoria WHERE accion_auditoria = 'BLOQUEO_PREVIO_REVERSION_004'")->fetchColumn(), 'Queda evidencia del bloqueo');
+        } finally {
+            $conexion->exec("DROP DATABASE IF EXISTS `{$base}`");
+            $conexion->exec('USE `' . BaseDatosPruebas::NOMBRE_BASE . '`');
+        }
+    });
+
+    $marco->probar('R04', 'R-04: emitir un enlace espera el bloqueo de la cuenta y deja uno solo vigente', static function () use ($baseDatos, $dependencias): void {
+        /** @var TokenCuentaModel $tokenCuentaModel */
+        $tokenCuentaModel = $dependencias['tokenCuentaModel'];
+        $idAna = (int) $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['id_usuario'];
+        $conexionApp = obtenerConexionBaseDatos();
+        $conexionOtra = $baseDatos->obtenerConexionAdministrativa();
+        $tokensAntes = $baseDatos->contar("SELECT COUNT(*) FROM token_cuenta WHERE id_usuario_destinatario = {$idAna}");
+
+        // Otra petición tiene bloqueada la cuenta (emisión en curso).
+        $conexionOtra->beginTransaction();
+        $conexionOtra->query("SELECT id_usuario FROM usuario WHERE id_usuario = {$idAna} FOR UPDATE")->fetchAll();
+        $conexionApp->exec('SET SESSION innodb_lock_wait_timeout = 1');
+        $codigoError = null;
+        $sentenciaQueEspero = '';
+        try {
+            $tokenCuentaModel->crearToken($idAna, TokenCuentaModel::FINALIDAD_RECUPERACION, GeneradorTokens::calcularHashToken(GeneradorTokens::generarToken()), 600);
+        } catch (PDOException $excepcion) {
+            $codigoError = (int) ($excepcion->errorInfo[1] ?? 0);
+            $sentenciaQueEspero = (string) (file($excepcion->getFile())[$excepcion->getLine() - 1] ?? '');
+        } finally {
+            $conexionOtra->rollBack();
+            $conexionApp->exec('SET SESSION innodb_lock_wait_timeout = 50');
+        }
+        MarcoPruebas::afirmarIgual(1205, $codigoError, 'La segunda emisión tuvo que esperar');
+        // Sin el bloqueo explícito la espera ocurriría en el INSERT (por la clave
+        // foránea), DESPUÉS de haber invalidado: justo la intercalación de R-04.
+        MarcoPruebas::afirmar(str_contains($sentenciaQueEspero, '$bloqueo->execute'), 'Esperó en el bloqueo de la cuenta, ANTES de invalidar o insertar: ' . trim($sentenciaQueEspero));
+        MarcoPruebas::afirmarIgual($tokensAntes, $baseDatos->contar("SELECT COUNT(*) FROM token_cuenta WHERE id_usuario_destinatario = {$idAna}"), 'No dejó filas a medias');
+
+        // Concurrencia real: 8 procesos PHP con conexiones propias emiten a la vez.
+        // Se repite con READ COMMITTED, donde InnoDB no pone bloqueos de rango.
+        $procesos = 8;
+        foreach ([1 => '', 2 => '', 3 => 'READ-COMMITTED', 4 => 'READ-COMMITTED', 5 => 'READ-COMMITTED'] as $ronda => $aislamiento) {
+            $tokenCuentaModel->invalidarTokens($idAna);
+            $inicio = sprintf('%.4F', microtime(true) + 1.5);
+            $manejadores = [];
+            for ($indice = 0; $indice < $procesos; $indice++) {
+                $manejadores[] = proc_open(
+                    [PHP_BINARY, RUTA_RAIZ . '/tests/auxiliar-emision-concurrente.php', (string) $idAna, $inicio, $aislamiento],
+                    [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                    $tuberias[$indice],
+                    RUTA_RAIZ,
+                    getenv()
+                );
+            }
+            $completados = 0;
+            foreach ($manejadores as $indice => $manejador) {
+                $completados += str_contains((string) stream_get_contents($tuberias[$indice][1]), 'ok') ? 1 : 0;
+                stream_get_contents($tuberias[$indice][2]);
+                proc_close($manejador);
+            }
+            MarcoPruebas::afirmarIgual($procesos, $completados, "Ronda {$ronda}: todos los procesos emitieron");
+            MarcoPruebas::afirmarIgual(1, $tokenCuentaModel->contarTokensVigentes($idAna, TokenCuentaModel::FINALIDAD_RECUPERACION), "Ronda {$ronda}: tras {$procesos} emisiones simultáneas solo queda un enlace vigente");
+        }
+        $tokenCuentaModel->invalidarTokens($idAna);
+    });
+
+    $marco->probar('R05', 'R-05: la confirmación con contraseña en administración tiene límite de intentos', static function () use ($baseDatos, $actor, $servicioAdministracion, $contrasenaPrincipal): void {
+        $baseDatos->limpiarIntentos();
+        $paula = $actor('paula@ejemplo.mx');
+        $idArturo = (int) $baseDatos->obtenerFilaUsuario('arturo@ejemplo.mx')['id_usuario'];
+        for ($intento = 1; $intento <= MAX_INTENTOS_REAUTENTICACION; $intento++) {
+            $resultado = $servicioAdministracion->cambiarEstadoCuenta($paula, $idArturo, 'SUSPENDIDA', 'contraseña candidata ' . $intento);
+            MarcoPruebas::afirmar(!$resultado['exito'] && str_contains($resultado['mensaje'], 'incorrecta'), "Intento {$intento} rechazado");
+        }
+        $bloqueado = $servicioAdministracion->cambiarEstadoCuenta($paula, $idArturo, 'SUSPENDIDA', $contrasenaPrincipal);
+        MarcoPruebas::afirmar(!$bloqueado['exito'] && str_contains($bloqueado['mensaje'], 'Demasiados intentos'), 'Con la contraseña correcta también se bloquea mientras dura la ventana');
+        MarcoPruebas::afirmarIgual('ACTIVA', $baseDatos->obtenerFilaUsuario('arturo@ejemplo.mx')['estado_cuenta_usuario'], 'La operación protegida no se ejecutó');
+        MarcoPruebas::afirmarIgual(1, $baseDatos->contarEventos('REAUTENTICACION_BLOQUEADA'), 'Auditado');
+        $baseDatos->limpiarIntentos();
+        MarcoPruebas::afirmar($servicioAdministracion->cambiarEstadoCuenta($actor('paula@ejemplo.mx'), $idArturo, 'SUSPENDIDA', $contrasenaPrincipal)['exito'], 'Al salir de la ventana vuelve a funcionar');
+        $servicioAdministracion->cambiarEstadoCuenta($actor('paula@ejemplo.mx'), $idArturo, 'ACTIVA', $contrasenaPrincipal);
+    });
+
+    $marco->probar('R06', 'R-06: los intentos se reservan antes de comprobar: los que están en curso cuentan para el límite', static function () use ($baseDatos, $dependencias, $iniciarComo, $contrasenaComun): void {
+        $baseDatos->limpiarIntentos();
+        $limitador = new LimitadorIntentos(new IntentoAccesoModel(obtenerConexionBaseDatos()), (string) getenv('CLAVE_HUELLAS'));
+        // Cinco peticiones simultáneas reservaron su cupo y aún no terminan.
+        $reservas = [];
+        for ($peticion = 1; $peticion <= MAX_INTENTOS_LOGIN; $peticion++) {
+            $reservas[] = $limitador->reservarIntento(LimitadorIntentos::AMBITO_LOGIN, 'ana@ejemplo.mx', '203.0.113.' . $peticion, MAX_INTENTOS_LOGIN, MAX_INTENTOS_LOGIN_ORIGEN);
+        }
+        MarcoPruebas::afirmar(!in_array(null, $reservas, true), 'Las cinco primeras obtienen cupo');
+        MarcoPruebas::afirmarIgual(null, $limitador->reservarIntento(LimitadorIntentos::AMBITO_LOGIN, 'ana@ejemplo.mx', '203.0.113.99', MAX_INTENTOS_LOGIN, MAX_INTENTOS_LOGIN_ORIGEN), 'La sexta no obtiene cupo');
+        MarcoPruebas::afirmarIgual(MAX_INTENTOS_LOGIN, $baseDatos->contar('SELECT COUNT(*) FROM intento_acceso'), 'La reserva rechazada se retiró (no alarga el bloqueo)');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_LIMITE_ALCANZADO, $iniciarComo('ana@ejemplo.mx', $contrasenaComun), 'Ni siquiera se comprueba la contraseña correcta');
+        $baseDatos->limpiarIntentos();
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx', $contrasenaComun), 'Sin reservas pendientes entra');
+        MarcoPruebas::afirmarIgual(0, $baseDatos->contar('SELECT COUNT(*) FROM intento_acceso'), 'Un inicio correcto no deja intentos registrados');
+    });
+
+    $marco->probar('R06b', 'R-06: un éxito retira solo su propia reserva; los fallos y reservas de otras peticiones siguen contando', static function () use ($baseDatos, $iniciarComo, $contrasenaComun, $contrasenaPrincipal, $servicioSegundoFactor, &$secretosTotp, $codigoActual): void {
+        $limitador = new LimitadorIntentos(new IntentoAccesoModel(obtenerConexionBaseDatos()), (string) getenv('CLAVE_HUELLAS'));
+        $pendientes = 4;
+
+        // Inicio de sesión: cuatro peticiones con contraseñas incorrectas
+        // reservaron su cupo y siguen comprobando; la legítima termina antes.
+        $baseDatos->limpiarIntentos();
+        for ($peticion = 1; $peticion <= $pendientes; $peticion++) {
+            $limitador->reservarIntento(LimitadorIntentos::AMBITO_LOGIN, 'ana@ejemplo.mx', '198.51.100.' . $peticion, MAX_INTENTOS_LOGIN, MAX_INTENTOS_LOGIN_ORIGEN);
+        }
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx', $contrasenaComun), 'La petición legítima entra');
+        MarcoPruebas::afirmarIgual($pendientes, $baseDatos->contar('SELECT COUNT(*) FROM intento_acceso'), 'Las reservas de las otras peticiones siguen registradas');
+        $admitidas = 0;
+        for ($peticion = 1; $peticion <= MAX_INTENTOS_LOGIN; $peticion++) {
+            $admitidas += $limitador->reservarIntento(LimitadorIntentos::AMBITO_LOGIN, 'ana@ejemplo.mx', '198.51.100.' . (50 + $peticion), MAX_INTENTOS_LOGIN, MAX_INTENTOS_LOGIN_ORIGEN) !== null ? 1 : 0;
+        }
+        MarcoPruebas::afirmarIgual(MAX_INTENTOS_LOGIN - $pendientes, $admitidas, 'Mientras terminan, solo se admite el cupo que queda');
+
+        // Segundo factor: el mismo caso con el código de la aplicación.
+        $baseDatos->limpiarIntentos();
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_REQUIERE_SEGUNDO_FACTOR, $iniciarComo('paula@ejemplo.mx', $contrasenaPrincipal), 'Pide el código');
+        $baseDatos->limpiarIntentos();
+        $idPaula = (string) $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['id_usuario'];
+        for ($peticion = 1; $peticion <= $pendientes; $peticion++) {
+            $limitador->reservarIntento('segundo-factor', $idPaula, '198.51.100.' . $peticion, MAX_INTENTOS_SEGUNDO_FACTOR, MAX_INTENTOS_LOGIN_ORIGEN);
+        }
+        $baseDatos->obtenerConexionAdministrativa()->exec("UPDATE usuario SET ultimo_paso_mfa_usuario = NULL WHERE id_usuario = {$idPaula}");
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_EXITO, $servicioSegundoFactor->verificarCodigo($codigoActual($secretosTotp['paula@ejemplo.mx']), '192.0.2.250'), 'El código correcto entra');
+        MarcoPruebas::afirmarIgual($pendientes, $baseDatos->contar('SELECT COUNT(*) FROM intento_acceso'), 'Segundo factor: las reservas ajenas siguen registradas');
+        $admitidas = 0;
+        for ($peticion = 1; $peticion <= MAX_INTENTOS_SEGUNDO_FACTOR; $peticion++) {
+            $admitidas += $limitador->reservarIntento('segundo-factor', $idPaula, '198.51.100.' . (50 + $peticion), MAX_INTENTOS_SEGUNDO_FACTOR, MAX_INTENTOS_LOGIN_ORIGEN) !== null ? 1 : 0;
+        }
+        MarcoPruebas::afirmarIgual(MAX_INTENTOS_SEGUNDO_FACTOR - $pendientes, $admitidas, 'Segundo factor: solo se admite el cupo que queda');
+        $baseDatos->limpiarIntentos();
+    });
+
+    $marco->probar('R09', 'R-09: consumir y emitir enlaces a la vez bloquean en el mismo orden (cuenta o solicitud, luego enlace) y no se interbloquean', static function () use ($baseDatos, $dependencias): void {
+        /** @var TokenCuentaModel $tokenCuentaModel */
+        $tokenCuentaModel = $dependencias['tokenCuentaModel'];
+        $conexionConsumo = $baseDatos->obtenerConexionAdministrativa();
+        $conexionConsumo->exec('SET SESSION innodb_lock_wait_timeout = 10');
+
+        /**
+         * Intercalación del hallazgo: la petición A consume el enlace; mientras
+         * sigue en su transacción, la petición B (otro proceso) emite un enlace
+         * nuevo para el mismo padre; después A actualiza el padre y confirma.
+         * Con el orden inverso (enlace antes que padre) A y B se esperan
+         * mutuamente y el motor aborta una con un interbloqueo (1213).
+         *
+         * @param string $modo 'cuenta' o 'solicitud'.
+         * @param int $idPadre Cuenta o solicitud.
+         * @param callable(): bool $consumir Consume el enlace en la conexión A.
+         * @param string $actualizarPadre UPDATE del padre en la conexión A.
+         * @return array{consumido: bool, salidaEmisor: string, error: string|null}
+         */
+        $intercalar = static function (string $modo, int $idPadre, callable $consumir, string $actualizarPadre) use ($conexionConsumo, $baseDatos): array {
+            $error = null;
+            $consumido = false;
+            $emisor = null;
+            $tuberias = [];
+            $conexionConsumo->beginTransaction();
+            try {
+                $consumido = $consumir();
+                $emisor = proc_open(
+                    [PHP_BINARY, RUTA_RAIZ . '/tests/auxiliar-emision-concurrente.php', (string) $idPadre, '0', '', $modo],
+                    [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                    $tuberias,
+                    RUTA_RAIZ,
+                    getenv()
+                );
+                // Espera a que el emisor quede detenido esperando un bloqueo.
+                for ($espera = 0; $espera < 100 && $baseDatos->contar("SELECT COUNT(*) FROM information_schema.INNODB_TRX WHERE trx_state = 'LOCK WAIT'") === 0; $espera++) {
+                    usleep(50000);
+                }
+                $conexionConsumo->exec($actualizarPadre);
+                $conexionConsumo->commit();
+            } catch (PDOException $excepcion) {
+                $error = $excepcion->getMessage();
+                if ($conexionConsumo->inTransaction()) {
+                    $conexionConsumo->rollBack();
+                }
+            }
+            $salidaEmisor = '';
+            if ($emisor !== null) {
+                $salidaEmisor = (string) stream_get_contents($tuberias[1]) . (string) stream_get_contents($tuberias[2]);
+                proc_close($emisor);
+            }
+            return ['consumido' => $consumido, 'salidaEmisor' => $salidaEmisor, 'error' => $error];
+        };
+
+        // Cuenta: recuperación de contraseña contra reenvío de enlace.
+        $idAna = (int) $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['id_usuario'];
+        $tokenCuentaModel->crearToken($idAna, TokenCuentaModel::FINALIDAD_RECUPERACION, GeneradorTokens::calcularHashToken(GeneradorTokens::generarToken()), 600);
+        $idToken = $baseDatos->contar("SELECT MAX(id_token_cuenta) FROM token_cuenta WHERE id_usuario_destinatario = {$idAna}");
+        $modeloConsumo = new TokenCuentaModel($conexionConsumo);
+        $cuenta = $intercalar('cuenta', $idAna, static fn (): bool => $modeloConsumo->consumirToken($idToken, $idAna), "UPDATE usuario SET version_sesion_usuario = version_sesion_usuario + 1 WHERE id_usuario = {$idAna}");
+        MarcoPruebas::afirmarIgual(null, $cuenta['error'], 'Cuenta: la petición que consume termina sin interbloqueo');
+        MarcoPruebas::afirmar($cuenta['consumido'], 'Cuenta: el enlace vigente se consumió');
+        MarcoPruebas::afirmar(str_contains($cuenta['salidaEmisor'], 'ok'), 'Cuenta: la emisión esperó y terminó sin error: ' . trim($cuenta['salidaEmisor']));
+        MarcoPruebas::afirmarIgual(1, $tokenCuentaModel->contarTokensVigentes($idAna, TokenCuentaModel::FINALIDAD_RECUPERACION), 'Cuenta: queda solo el enlace nuevo');
+        $tokenCuentaModel->invalidarTokens($idAna);
+
+        // Solicitud: confirmar el correo contra reenvío del enlace de verificación.
+        $idSolicitud = $baseDatos->contar('SELECT MIN(id_solicitud_acceso) FROM solicitud_acceso');
+        $tokenSolicitudModel = new TokenSolicitudModel(obtenerConexionBaseDatos());
+        $tokenSolicitudModel->crearToken($idSolicitud, GeneradorTokens::calcularHashToken(GeneradorTokens::generarToken()), 600);
+        $idTokenSolicitud = $baseDatos->contar("SELECT MAX(id_token_solicitud) FROM token_solicitud WHERE id_solicitud_acceso_destinataria = {$idSolicitud}");
+        $modeloSolicitudConsumo = new TokenSolicitudModel($conexionConsumo);
+        $solicitud = $intercalar('solicitud', $idSolicitud, static fn (): bool => $modeloSolicitudConsumo->consumirToken($idTokenSolicitud, $idSolicitud), "UPDATE solicitud_acceso SET fecha_verificacion_correo_solicitud = fecha_verificacion_correo_solicitud WHERE id_solicitud_acceso = {$idSolicitud}");
+        MarcoPruebas::afirmarIgual(null, $solicitud['error'], 'Solicitud: la petición que consume termina sin interbloqueo');
+        MarcoPruebas::afirmar($solicitud['consumido'], 'Solicitud: el enlace vigente se consumió');
+        MarcoPruebas::afirmar(str_contains($solicitud['salidaEmisor'], 'ok'), 'Solicitud: la emisión esperó y terminó sin error: ' . trim($solicitud['salidaEmisor']));
+        $baseDatos->obtenerConexionAdministrativa()->exec("UPDATE token_solicitud SET fecha_consumo_token_solicitud = NOW() WHERE id_solicitud_acceso_destinataria = {$idSolicitud} AND fecha_consumo_token_solicitud IS NULL");
+        $conexionConsumo->exec('SET SESSION innodb_lock_wait_timeout = 50');
+
+        // Consumir fuera de una transacción no está permitido: el orden de
+        // bloqueo solo vale si el padre se actualiza en la misma transacción.
+        $rechazado = false;
+        try {
+            $tokenCuentaModel->consumirToken($idToken, $idAna);
+        } catch (LogicException) {
+            $rechazado = true;
+        }
+        MarcoPruebas::afirmar($rechazado, 'consumirToken() exige una transacción abierta');
+    });
+
+    $marco->probar('R10', 'Política: validar una cuenta del registro anterior no conserva su contraseña antigua; debe crear una nueva con la política vigente (web y consola)', static function () use ($baseDatos, $iniciarComo, $actor, $servicioAdministracion, $contrasenaPrincipal, $buzon): void {
+        // Antes de la lista de bloqueo (commit 4c88521) el registro aceptaba esta secuencia.
+        $contrasenaAntigua = '123456789012345';
+        MarcoPruebas::afirmar(PoliticaContrasenas::validarNuevaContrasena($contrasenaAntigua) !== null, 'La política vigente no permitiría crearla');
+        $conexion = $baseDatos->obtenerConexionAdministrativa();
+        $insertarHeredada = static function (string $correo, string $nombre) use ($conexion, $contrasenaAntigua): int {
+            // Estado que deja la migración 005: SUSPENDIDA y sin validación institucional.
+            $conexion->prepare("INSERT INTO usuario (nombres_usuario, apellido_paterno_usuario, correo_electronico_usuario, hash_contrasena_usuario, estado_cuenta_usuario)
+                VALUES (?, 'Heredado', ?, ?, 'SUSPENDIDA')")->execute([$nombre, $correo, GestorContrasenas::generarHash($contrasenaAntigua)]);
+            return (int) $conexion->lastInsertId();
+        };
+
+        // 1. Web: "Validar y reactivar".
+        $idLalo = $insertarHeredada('lalo@ejemplo.mx', 'Lalo');
+        $resultado = $servicioAdministracion->cambiarEstadoCuenta($actor('paula@ejemplo.mx'), $idLalo, 'ACTIVA', $contrasenaPrincipal);
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('lalo@ejemplo.mx', $contrasenaAntigua), 'La contraseña antigua ya no sirve');
+        MarcoPruebas::afirmar($resultado['exito'] && str_contains($resultado['mensaje'], 'contraseña nueva'), 'Validada, con aviso de contraseña nueva: ' . $resultado['mensaje']);
+        $fila = $baseDatos->obtenerFilaUsuario('lalo@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('INVITADA', $fila['estado_cuenta_usuario'], 'Queda por activar');
+        MarcoPruebas::afirmar($fila['fecha_validacion_institucional_usuario'] !== null, 'Con la validación registrada');
+        $token = (string) $buzon->ultimoToken('lalo@ejemplo.mx', '/activar-cuenta');
+        MarcoPruebas::afirmar(GeneradorTokens::esFormatoValido($token), 'Recibe un enlace de activación');
+        $dependencias = Aplicacion::construirDependencias(obtenerConexionBaseDatos());
+        /** @var ServicioCredenciales $credenciales */
+        $credenciales = $dependencias['servicioCredenciales'];
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_CONTRASENA_RECHAZADA, $credenciales->activarCuenta($token, $contrasenaAntigua)['resultado'], 'No puede volver a poner la antigua');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_EXITO, $credenciales->activarCuenta($token, 'el pescador vuelve con la red llena')['resultado'], 'Crea una nueva');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('lalo@ejemplo.mx', 'el pescador vuelve con la red llena'), 'Entra con la nueva');
+
+        // 2. Consola: habilitar como principal una cuenta del registro anterior.
+        $idLuis = $insertarHeredada('luis@ejemplo.mx', 'Luis');
+        $baseDatos->fijarRol('paula@ejemplo.mx', UsuarioModel::ROL_USUARIO);
+        try {
+            $consola = $servicioAdministracion->inicializarAdministradorPrincipal('luis@ejemplo.mx');
+            MarcoPruebas::afirmar($consola['exito'] && GeneradorTokens::esFormatoValido((string) $consola['tokenActivacion']), 'La consola entrega un enlace de activación');
+            MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('luis@ejemplo.mx', $contrasenaAntigua), 'Consola: la contraseña antigua ya no sirve');
+            MarcoPruebas::afirmarIgual('INVITADA', $baseDatos->obtenerFilaUsuario('luis@ejemplo.mx')['estado_cuenta_usuario'], 'Consola: queda por activar');
+        } finally {
+            $baseDatos->fijarRol('luis@ejemplo.mx', UsuarioModel::ROL_USUARIO);
+            $baseDatos->fijarRol('paula@ejemplo.mx', UsuarioModel::ROL_ADMINISTRADOR_PRINCIPAL);
+        }
+    });
+
+    $marco->probar('R07', 'R-07/AC-26: si el correo falla, la aprobación lo dice y se puede reenviar', static function () use ($baseDatos, $buzon, $servicioSolicitud, $actor, $origenNuevo, $datosSolicitud): void {
+        $correoFallido = new ServicioCorreo('desactivado', 'http://papc.prueba.invalid', 'x@papc.invalid', $buzon->directorio);
+        $dependenciasSinCorreo = Aplicacion::construirDependencias(obtenerConexionBaseDatos(), $correoFallido);
+        /** @var ServicioSolicitudAcceso $solicitudSinCorreo */
+        $solicitudSinCorreo = $dependenciasSinCorreo['servicioSolicitudAcceso'];
+        $eventosAntes = $baseDatos->contarEventos('ENVIO_CORREO_FALLIDO');
+
+        MarcoPruebas::afirmarIgual(ServicioSolicitudAcceso::RESULTADO_RECIBIDA, $solicitudSinCorreo->registrarSolicitud($datosSolicitud('Rita', 'Reintento', 'rita@ejemplo.mx', 'ALUMNO', 'A2026099'), $origenNuevo()), 'La respuesta pública sigue siendo neutral');
+        MarcoPruebas::afirmarIgual([], $buzon->mensajesPara('rita@ejemplo.mx'), 'No se generó ningún mensaje');
+        MarcoPruebas::afirmar($baseDatos->contarEventos('ENVIO_CORREO_FALLIDO') > $eventosAntes, 'El fallo queda registrado para el personal');
+
+        $servicioSolicitud->reenviarVerificacion('rita@ejemplo.mx', $origenNuevo());
+        $servicioSolicitud->verificarCorreo((string) $buzon->ultimoToken('rita@ejemplo.mx', '/verificar-solicitud'));
+        $idSolicitud = (int) $baseDatos->obtenerFilaSolicitud('rita@ejemplo.mx')['id_solicitud_acceso'];
+        $aprobada = $solicitudSinCorreo->aprobarSolicitud($actor('paula@ejemplo.mx'), $idSolicitud, 'Cotejo con el padrón ficticio de pruebas', true);
+        MarcoPruebas::afirmar($aprobada['exito'] && str_contains($aprobada['mensaje'], 'envío de la invitación está pendiente'), 'No se finge el envío: ' . $aprobada['mensaje']);
+        $reenvio = $servicioSolicitud->reenviarInvitacion($actor('paula@ejemplo.mx'), $idSolicitud);
+        MarcoPruebas::afirmar($reenvio['exito'] && str_contains($reenvio['mensaje'], 'buzón de pruebas'), 'El reintento dice dónde quedó el mensaje: ' . $reenvio['mensaje']);
+        MarcoPruebas::afirmar($buzon->ultimoToken('rita@ejemplo.mx', '/activar-cuenta') !== null, 'La invitación llegó al reintentar');
+    });
+
+    $marco->probar('P39', 'SEG-16: la bitácora reconstruye aprobaciones y cambios de rol sin contraseñas ni tokens', static function () use ($baseDatos, $buzon, $contrasenaComun, $contrasenaPrincipal): void {
+        $eventos = (new AuditoriaModel(obtenerConexionBaseDatos()))->listarEventosRecientes(500);
+        $aprobaciones = array_values(array_filter($eventos, static fn (array $evento): bool => $evento['accion_auditoria'] === 'SOLICITUD_APROBADA'));
+        MarcoPruebas::afirmar(count($aprobaciones) >= 3, 'Aprobaciones registradas');
+        MarcoPruebas::afirmar($aprobaciones[0]['id_usuario_actor'] !== null && isset($aprobaciones[0]['detalle_auditoria']['idUsuarioCreado']), 'Quién aprobó y qué cuenta se creó');
+        MarcoPruebas::afirmar(!isset($aprobaciones[0]['detalle_auditoria']['origen']), 'La pantalla no muestra la IP');
+        MarcoPruebas::afirmar($baseDatos->contarEventos('CAMBIO_ROL') >= 2, 'Cambios de rol registrados');
+
+        $todoElDetalle = implode("\n", $baseDatos->obtenerConexionAdministrativa()->query('SELECT detalle_auditoria FROM auditoria')->fetchAll(PDO::FETCH_COLUMN));
+        foreach ([$contrasenaComun, $contrasenaPrincipal, 'argon2id'] as $secreto) {
+            MarcoPruebas::afirmar(!str_contains($todoElDetalle, $secreto), "La bitácora no contiene: {$secreto}");
+        }
+        foreach (glob($buzon->directorio . '/*.txt') ?: [] as $archivo) {
+            if (preg_match('/token=([A-Za-z0-9_-]{43})/', (string) file_get_contents($archivo), $coincidencia) === 1) {
+                MarcoPruebas::afirmar(!str_contains($todoElDetalle, $coincidencia[1]), 'La bitácora no contiene tokens');
+            }
+        }
+    });
+
+    $marco->probar('P22', 'Mínimo privilegio: la cuenta de la aplicación no altera la auditoría, no borra ni cambia la estructura', static function (): void {
+        $conexionAplicacion = obtenerConexionBaseDatos();
+        foreach ([
+            'DELETE FROM auditoria',
+            'UPDATE auditoria SET accion_auditoria = \'X\'',
+            'DELETE FROM usuario',
+            'DELETE FROM solicitud_acceso',
+            'DELETE FROM token_cuenta',
+            'DROP TABLE intento_acceso',
+            'ALTER TABLE usuario ADD COLUMN x INT',
+            'SELECT * FROM aviso',
+        ] as $sentenciaProhibida) {
+            $fueRechazada = false;
+            try {
+                $conexionAplicacion->exec($sentenciaProhibida);
+            } catch (PDOException) {
+                $fueRechazada = true;
+            }
+            MarcoPruebas::afirmar($fueRechazada, "MariaDB debió rechazar: {$sentenciaProhibida}");
+        }
+    });
+
+    $reiniciarSesion();
+};

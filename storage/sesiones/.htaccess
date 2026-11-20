@@ -1,0 +1,3 @@
+# Defensa adicional: este directorio NUNCA debe servirse por HTTP.
+# El control principal es que DocumentRoot apunte solo a public/.
+Require all denied

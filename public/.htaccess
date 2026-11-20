@@ -1,0 +1,24 @@
+# PAPC | Configuración de Apache para el ÚNICO directorio público.
+
+# Este directorio sí es público (anula el "Require all denied" del .htaccess
+# de la raíz del proyecto cuando no se usa el Alias).
+Require all granted
+
+# Sin listado de directorios.
+Options -Indexes -MultiViews
+
+# Nunca servir archivos ocultos, respaldos ni fuentes por error copiados aquí.
+<FilesMatch "(^\.|\.(sql|env|log|bak|ini|md|lock|dist)$)">
+    Require all denied
+</FilesMatch>
+
+# Enrutamiento frontal: lo que no sea un archivo real va a index.php.
+# BASE se calcula sola, así funciona igual con VirtualHost (/), con
+# Alias (/papc) o desde una subcarpeta (/papc/public) sin editar este archivo.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI}::$0 ^(/.+)/(.*)::\2$
+    RewriteRule .* - [E=BASE:%1]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ %{ENV:BASE}/index.php [QSA,L]
+</IfModule>
