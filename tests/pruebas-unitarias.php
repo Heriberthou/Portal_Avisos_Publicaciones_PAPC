@@ -319,4 +319,73 @@ return static function (MarcoPruebas $marco): void {
         MarcoPruebas::afirmar(!$servicioDesactivado->enviarRecuperacion('ana@x.mx', $token), 'Modo desconocido no finge un envío');
         MarcoPruebas::afirmar(!$servicio->enviarRecuperacion("ana@x.mx\r\nBcc: otro@x.mx", $token), 'Inyección de encabezados rechazada');
     });
+    $marco->probar('U16', 'Correo por SMTP: autentica, entrega el mensaje con el enlace y, si el servidor rechaza, no finge el envío ni registra la contraseña', static function (): void {
+        /**
+         * Arranca el servidor SMTP falso y espera a que escuche.
+         *
+         * @return array{0: resource, 1: array<int, resource>, 2: int, 3: string}
+         */
+        $iniciarServidor = static function (string $contrasenaEsperada): array {
+            $puerto = random_int(20000, 29999);
+            $salida = tempnam(sys_get_temp_dir(), 'smtp');
+            $proceso = proc_open(
+                [PHP_BINARY, RUTA_RAIZ . '/tests/auxiliar-servidor-smtp.php', (string) $puerto, $contrasenaEsperada, $salida],
+                [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                $tuberias
+            );
+            fgets($tuberias[1]); // "listo"
+            return [$proceso, $tuberias, $puerto, $salida];
+        };
+        $terminar = static function (array $servidor): array {
+            [$proceso, $tuberias, , $salida] = $servidor;
+            stream_get_contents($tuberias[1]);
+            stream_get_contents($tuberias[2]);
+            proc_close($proceso);
+            $recibido = json_decode((string) file_get_contents($salida), true);
+            @unlink($salida);
+            return is_array($recibido) ? $recibido : [];
+        };
+        $token = GeneradorTokens::generarToken();
+        $cuenta = 'papc.notificaciones@ejemplo.mx';
+
+        // 1. Envío aceptado.
+        $servidor = $iniciarServidor('clave de prueba');
+        $cliente = new ClienteSmtp('127.0.0.1', $servidor[2], ClienteSmtp::SEGURIDAD_NINGUNA, $cuenta, 'clave de prueba');
+        $servicio = new ServicioCorreo('smtp', 'http://192.168.20.132/papc', $cuenta, sys_get_temp_dir(), $cliente);
+        MarcoPruebas::afirmar($servicio->enviarRecuperacion('ana@x.mx', $token), 'El servidor aceptó el mensaje');
+        $recibido = $terminar($servidor);
+        MarcoPruebas::afirmarIgual($cuenta, $recibido['usuario'] ?? null, 'Se autenticó con la cuenta configurada');
+        MarcoPruebas::afirmarIgual('MAIL FROM:<' . $cuenta . '>', $recibido['remitente'] ?? null, 'Remitente del sobre');
+        MarcoPruebas::afirmarIgual('RCPT TO:<ana@x.mx>', $recibido['destinatario'] ?? null, 'Destinatario del sobre');
+        [$encabezados, $cuerpoCodificado] = explode("\r\n\r\n", (string) ($recibido['mensaje'] ?? ''), 2) + ['', ''];
+        preg_match('/^Subject: (.+)$/mi', $encabezados, $asunto);
+        MarcoPruebas::afirmarIgual('Instrucciones para restablecer su contraseña del PAPC', mb_decode_mimeheader(trim($asunto[1] ?? '')), 'Asunto con acentos (UTF-8)');
+        $cuerpo = (string) base64_decode((string) preg_replace('/\s+/', '', $cuerpoCodificado));
+        MarcoPruebas::afirmar(str_contains($cuerpo, 'http://192.168.20.132/papc/restablecer-contrasena?token=' . $token), 'El cuerpo trae el enlace de un solo uso');
+        MarcoPruebas::afirmar(str_contains($encabezados, 'Content-Type: text/plain; charset=UTF-8'), 'Texto plano UTF-8');
+
+        // 2. Contraseña rechazada (por ejemplo, contraseña de aplicación mal copiada).
+        $bitacora = RUTA_RAIZ . '/storage/logs/app.log';
+        $tamanoAntes = is_file($bitacora) ? filesize($bitacora) : 0;
+        $servidor = $iniciarServidor('la correcta');
+        $cliente = new ClienteSmtp('127.0.0.1', $servidor[2], ClienteSmtp::SEGURIDAD_NINGUNA, $cuenta, 'clave equivocada xyz');
+        $servicio = new ServicioCorreo('smtp', 'http://192.168.20.132/papc', $cuenta, sys_get_temp_dir(), $cliente);
+        MarcoPruebas::afirmar(!$servicio->enviarRecuperacion('ana@x.mx', $token), 'Si el servidor rechaza, no finge el envío');
+        $terminar($servidor);
+        clearstatcache();
+        $nuevo = (string) file_get_contents($bitacora, false, null, $tamanoAntes);
+        MarcoPruebas::afirmar(str_contains($nuevo, '535'), 'La bitácora dice por qué falló');
+        MarcoPruebas::afirmar(!str_contains($nuevo, 'clave equivocada xyz') && !str_contains($nuevo, base64_encode('clave equivocada xyz')), 'La contraseña no aparece en la bitácora');
+
+        // 3. Sin cifrado solo hacia la propia máquina.
+        $rechazado = false;
+        try {
+            new ClienteSmtp('smtp.gmail.com', 587, ClienteSmtp::SEGURIDAD_NINGUNA, $cuenta, 'x');
+        } catch (InvalidArgumentException) {
+            $rechazado = true;
+        }
+        MarcoPruebas::afirmar($rechazado, 'Sin cifrado hacia un servidor externo se rechaza (la contraseña viajaría en claro)');
+        $sinCliente = new ServicioCorreo('smtp', 'http://192.168.20.132/papc', $cuenta, sys_get_temp_dir());
+        MarcoPruebas::afirmar(!$sinCliente->enviarRecuperacion('ana@x.mx', $token), 'Modo smtp sin configuración no finge un envío');
+    });
 };

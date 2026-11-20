@@ -1,5 +1,5 @@
 PAPC | Evidencia de pruebas automáticas
-Fecha: 2026-11-20 | Rama: feature/diseno | Especificación 1.3 + correcciones R-01 a R-09 + rediseño de las pantallas de acceso
+Fecha: 2026-11-20 | Rama: feature/diseno | Especificación 1.3 + correcciones R-01 a R-09 + rediseño de acceso + envío SMTP
 Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 en 127.0.0.1:3398 (base desechable papc_db_pruebas), servidor embebido php -S.
 Comando: php tests/ejecutar-pruebas.php todas
 
@@ -22,6 +22,7 @@ Comando: php tests/ejecutar-pruebas.php todas
 [PASA] U12     TOTP: vectores oficiales RFC 6238, tolerancia de ±30 s y sin reutilizar códigos
 [PASA] U13     Secreto del segundo factor cifrado (AES-256-GCM) y ligado a la cuenta
 [PASA] U14     Correo: enlaces solo con APP_URL_PUBLICA válida (nunca con el encabezado Host)
+[PASA] U16     Correo por SMTP: autentica, entrega el mensaje con el enlace y, si el servidor rechaza, no finge el envío ni registra la contraseña
 [PASA] P19     AC-27: el primer principal se crea solo por consola, sin contraseña predeterminada y una sola vez
 [PASA] P30a    AC-09/AC-10: activación rechaza contraseñas comunes, usa el enlace una sola vez y no abre sesión
 [PASA] P26a    AC-14: la contraseña correcta de un administrador sin segundo factor no abre sesión
@@ -85,4 +86,4 @@ Comando: php tests/ejecutar-pruebas.php todas
 [PASA] P16     AC-23: archivos privados, correos de prueba y herramientas no accesibles por HTTP
 [PASA] P15b    AC-21: intentos repetidos por HTTP: 429 aun con la contraseña correcta
 
-Total: 81 | Pasan: 81 | Fallan: 0
+Total: 82 | Pasan: 82 | Fallan: 0

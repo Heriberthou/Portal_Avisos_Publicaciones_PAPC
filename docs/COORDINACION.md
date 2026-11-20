@@ -19,6 +19,9 @@ riesgo, propuesta). Claude Code lo corrige y responde en el mismo archivo.
 ### Claude Code
 
 - **Tarea en curso:** ninguna.
+- **Tarea terminada (20/11/2026):** envío real de correos por SMTP (modo `smtp`). Archivos nuevos: `app/servicios/ClienteSmtp.php`,
+  `herramientas/probar-correo.php`, `tests/auxiliar-servidor-smtp.php`; cambios en `ServicioCorreo`, `.env.example`,
+  `tests/pruebas-unitarias.php` (U16) y `README.md`. **Sin cambios de base de datos.**
 - **Tarea terminada (20/11/2026):** corrección de R-06 (seguimiento) y R-09 de `docs/revision-codex.md`.
   Archivos: `LimitadorIntentos`, `IntentoAccesoModel`, `ServicioAutenticacion`, `ServicioSegundoFactor`,
   `TokenCuentaModel`, `TokenSolicitudModel`, `ServicioCredenciales`, `ServicioSolicitudAcceso`, `tests/` (R06b, R09 y el auxiliar

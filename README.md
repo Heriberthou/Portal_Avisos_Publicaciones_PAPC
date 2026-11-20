@@ -136,6 +136,41 @@ Detalle y respuesta de cada hallazgo en `docs/revision-codex.md`.
 - **Contraste:** texto blanco sobre la tarjeta con más de 7:1 y sobre el botón violeta con 5.5:1; foco visible
   en dorado claro. Revisado en navegador a 1440, 1280 y 375 px de ancho (sin desplazamiento horizontal).
   **No** se probó con lector de pantalla.
+### Enviar correos de verdad (CORREO_MODO=smtp, 20/11/2026)
+
+El portal envía por SMTP con su propio cliente (`app/servicios/ClienteSmtp.php`, sin librerías externas): conexión cifrada
+(STARTTLS en 587 o TLS en 465) con verificación del certificado, y la contraseña nunca se escribe en la bitácora. Se configura
+solo en el `.env` del servidor; no se toca `php.ini`, así que no afecta a los demás equipos del XAMPP compartido.
+
+**1. Obtener la contraseña de aplicación (Gmail).** Se recomienda una cuenta de Gmail creada solo para el proyecto (no la personal).
+1. Inicie sesión en esa cuenta y abra *Gestionar tu cuenta de Google → Seguridad*.
+2. Active la **Verificación en dos pasos** (Google lo exige para crear contraseñas de aplicación).
+3. Abra `https://myaccount.google.com/apppasswords`, escriba un nombre (por ejemplo, `PAPC`) y pulse **Crear**.
+4. Google muestra una clave de 16 letras **una sola vez**. Cópiela directo al `.env` del servidor; no la suba a GitHub ni la comparta.
+
+Las cuentas institucionales pueden tener deshabilitadas las contraseñas de aplicación por la administración; por eso conviene una cuenta propia del proyecto.
+
+**2. `.env` del servidor** (reemplazar las líneas de correo):
+```
+CORREO_MODO=smtp
+CORREO_REMITENTE=cuenta.del.proyecto@gmail.com
+CORREO_SMTP_SERVIDOR=smtp.gmail.com
+CORREO_SMTP_PUERTO=587
+CORREO_SMTP_SEGURIDAD=tls
+CORREO_SMTP_USUARIO=cuenta.del.proyecto@gmail.com
+CORREO_SMTP_CONTRASENA=la clave de 16 letras
+```
+Con Gmail, `CORREO_REMITENTE` debe ser la misma cuenta. Los espacios de la clave se quitan solos.
+
+**3. Probar:** `C:\xampp\php\php.exe herramientas\probar-correo.php su.correo@dominio.mx`. Si falla, muestra el motivo:
+`535` = usuario o clave incorrectos; "No se pudo conectar" = la red bloquea el puerto 587; error de certificado = agregar
+`CORREO_SMTP_CERTIFICADOS=C:\xampp\apache\bin\curl-ca-bundle.crt`.
+
+**Evidencia.** Prueba U16 con un servidor SMTP falso local (autenticación, sobre, asunto con acentos, enlace en el cuerpo, rechazo
+535 sin fingir el envío y sin la contraseña en la bitácora). Con Laragon (PHP 8.3) se comprobó la conexión cifrada real con
+`smtp.gmail.com:587` y la verificación del certificado, **sin** credenciales (Gmail respondió 530, autenticación requerida).
+**No se probó** un envío real autenticado ni el PHP 8.2 del XAMPP.
+
 ### Actualizar el servidor (`equipo_7`)
 
 1. **Respaldo**: phpMyAdmin → `equipo_7` → Exportar.
@@ -169,7 +204,7 @@ las migraciones, la aplicación responde error 500.
 
 Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 local (base desechable `papc_db_pruebas`, cuenta de
 aplicación con los GRANT de `usuario-aplicacion.sql`), servidor embebido `php -S`.
-Resultado: **81/81** (19 unitarias, 44 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
+Resultado: **82/82** (20 unitarias, 44 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
 **No se ejecutaron en el XAMPP del servidor.**
 
 | AC | Caso | Prueba(s) | Resultado |

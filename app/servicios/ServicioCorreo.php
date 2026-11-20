@@ -10,6 +10,9 @@ declare(strict_types=1);
  *    en storage/correos/ (carpeta privada, fuera de public/ y excluida del
  *    repositorio). Sirve para demostrar el flujo sin declarar envíos reales
  *    (especificación 2.4). Se leen con herramientas/ver-buzon-pruebas.php.
+ *  - smtp: envía de verdad con ClienteSmtp (por ejemplo, Gmail con una
+ *    contraseña de aplicación). Los datos de la cuenta van en el .env del
+ *    servidor (CORREO_SMTP_*), nunca en el repositorio.
  *  - mail: usa mail() de PHP. Requiere un servidor SMTP configurado en
  *    php.ini; si falla, el método devuelve false y la interfaz lo informa.
  *  - cualquier otro valor: no se envía y se devuelve false.
@@ -25,18 +28,23 @@ final class ServicioCorreo
 {
     public const MODO_BUZON_PRUEBAS = 'buzon_pruebas';
     public const MODO_MAIL = 'mail';
+    public const MODO_SMTP = 'smtp';
 
     /**
      * @param string $modo Modo de envío.
      * @param string|null $urlPublica APP_URL_PUBLICA (sin barra final).
      * @param string $remitente Dirección del remitente.
      * @param string $directorioBuzon Carpeta del buzón de pruebas.
+     * @param ClienteSmtp|null $clienteSmtp Cliente para el modo smtp.
+     * @param string $nombreRemitente Nombre visible del remitente.
      */
     public function __construct(
         private readonly string $modo,
         private readonly ?string $urlPublica,
         private readonly string $remitente,
-        private readonly string $directorioBuzon
+        private readonly string $directorioBuzon,
+        private readonly ?ClienteSmtp $clienteSmtp = null,
+        private readonly string $nombreRemitente = 'PAPC · Universidad del Mar'
     ) {
     }
 
@@ -47,12 +55,36 @@ final class ServicioCorreo
     {
         // CORREO_DIRECTORIO_BUZON solo lo usan las pruebas automáticas (carpeta temporal).
         $directorioBuzon = (string) Configuracion::obtener('CORREO_DIRECTORIO_BUZON', '');
+        $modo = (string) Configuracion::obtener('CORREO_MODO', self::MODO_BUZON_PRUEBAS);
         return new self(
-            (string) Configuracion::obtener('CORREO_MODO', self::MODO_BUZON_PRUEBAS),
+            $modo,
             Configuracion::obtener('APP_URL_PUBLICA'),
             (string) Configuracion::obtener('CORREO_REMITENTE', 'no-responder@papc.invalid'),
-            $directorioBuzon !== '' ? $directorioBuzon : RUTA_RAIZ . '/storage/correos'
+            $directorioBuzon !== '' ? $directorioBuzon : RUTA_RAIZ . '/storage/correos',
+            $modo === self::MODO_SMTP ? self::crearClienteSmtp() : null
         );
+    }
+
+    /**
+     * Cliente SMTP con los datos CORREO_SMTP_* del .env.
+     *
+     * @return ClienteSmtp|null null si la configuración está incompleta (se registra el motivo).
+     */
+    private static function crearClienteSmtp(): ?ClienteSmtp
+    {
+        try {
+            return new ClienteSmtp(
+                (string) Configuracion::obtener('CORREO_SMTP_SERVIDOR', 'smtp.gmail.com'),
+                (int) Configuracion::obtener('CORREO_SMTP_PUERTO', '587'),
+                (string) Configuracion::obtener('CORREO_SMTP_SEGURIDAD', ClienteSmtp::SEGURIDAD_STARTTLS),
+                (string) Configuracion::obtener('CORREO_SMTP_USUARIO', ''),
+                self::leerContrasenaSmtp(),
+                Configuracion::obtener('CORREO_SMTP_CERTIFICADOS')
+            );
+        } catch (InvalidArgumentException $excepcion) {
+            RegistroAplicacion::registrarError('Configuración SMTP no válida; no se enviarán correos.', ['motivo' => $excepcion->getMessage()]);
+            return null;
+        }
     }
 
     /**
@@ -158,6 +190,23 @@ final class ServicioCorreo
     }
 
     /**
+     * Mensaje de prueba de la configuración (herramientas/probar-correo.php).
+     * No contiene enlaces ni datos de cuentas.
+     *
+     * @param string $correo Destinatario.
+     * @return bool true si se entregó al canal configurado.
+     */
+    public function enviarPrueba(string $correo): bool
+    {
+        return $this->enviar($correo, 'Prueba de correo del PAPC', "Hola:
+
+Este es un mensaje de prueba del Portal de Avisos y Publicaciones de la Comunidad (PAPC).
+Si lo recibió, el envío de correos funciona.
+
+No necesita responder.");
+    }
+
+    /**
      * @return bool true si los mensajes NO se envían por correo y solo quedan
      *              en el buzón de pruebas del servidor (hallazgo R-07).
      */
@@ -237,6 +286,9 @@ final class ServicioCorreo
         if ($this->modo === self::MODO_BUZON_PRUEBAS) {
             return $this->guardarEnBuzon($destinatario, $asunto, $cuerpo);
         }
+        if ($this->modo === self::MODO_SMTP) {
+            return $this->enviarPorSmtp($destinatario, $asunto, $cuerpo);
+        }
         if ($this->modo === self::MODO_MAIL) {
             $encabezados = [
                 'From'         => $this->remitente,
@@ -251,6 +303,55 @@ final class ServicioCorreo
         }
         RegistroAplicacion::registrarError('CORREO_MODO no reconocido; no se envió el correo.', ['modo' => $this->modo]);
         return false;
+    }
+
+    /**
+     * Google muestra la contraseña de aplicación en grupos de 4 letras
+     * ("abcd efgh ijkl mnop"): para Gmail se quitan los espacios.
+     *
+     * @return string Contraseña SMTP del .env.
+     */
+    private static function leerContrasenaSmtp(): string
+    {
+        $contrasena = (string) Configuracion::obtener('CORREO_SMTP_CONTRASENA', '');
+        $servidor = strtolower((string) Configuracion::obtener('CORREO_SMTP_SERVIDOR', 'smtp.gmail.com'));
+        return $servidor === 'smtp.gmail.com' ? (string) preg_replace('/\s+/', '', $contrasena) : $contrasena;
+    }
+
+    /**
+     * Arma el mensaje (texto plano UTF-8 en base64) y lo entrega por SMTP.
+     *
+     * @param string $destinatario Correo validado.
+     * @param string $asunto Asunto.
+     * @param string $cuerpo Texto plano.
+     * @return bool true si el servidor SMTP aceptó el mensaje.
+     */
+    private function enviarPorSmtp(string $destinatario, string $asunto, string $cuerpo): bool
+    {
+        if ($this->clienteSmtp === null) {
+            RegistroAplicacion::registrarError('CORREO_MODO=smtp sin configuración SMTP válida; no se envió el correo.');
+            return false;
+        }
+        $dominio = substr((string) strrchr($this->remitente, '@'), 1) ?: 'papc.invalid';
+        $encabezados = [
+            'Date: ' . date(DATE_RFC2822),
+            'From: =?UTF-8?B?' . base64_encode($this->nombreRemitente) . '?= <' . $this->remitente . '>',
+            'To: <' . $destinatario . '>',
+            'Subject: =?UTF-8?B?' . base64_encode($asunto) . '?=',
+            'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . $dominio . '>',
+            'MIME-Version: 1.0',
+            'Content-Type: text/plain; charset=UTF-8',
+            'Content-Transfer-Encoding: base64',
+        ];
+        $texto = str_replace(["\r\n", "\r"], "\n", $cuerpo);
+        $mensaje = implode("\r\n", $encabezados) . "\r\n\r\n" . rtrim(chunk_split(base64_encode(str_replace("\n", "\r\n", $texto)), 76, "\r\n"));
+        try {
+            $this->clienteSmtp->enviar($this->remitente, $destinatario, $mensaje);
+            return true;
+        } catch (RuntimeException $excepcion) {
+            RegistroAplicacion::registrarError('No se pudo enviar el correo por SMTP.', ['motivo' => $excepcion->getMessage()]);
+            return false;
+        }
     }
 
     /**
