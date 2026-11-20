@@ -41,16 +41,16 @@ $invalido = static fn (array $errores, string $campo): string => isset($errores[
 ?>
 <?php require RUTA_RAIZ . '/app/views/parciales/acceso-inicio.php'; ?>
 <h1 class="titulo-acceso">Solicitar acceso</h1>
-<p class="subtitulo-acceso">Complete sus datos. Revisaremos que pertenezca a la comunidad universitaria y, si se aprueba, recibirá un correo para crear su contraseña.</p>
+<p class="subtitulo-acceso">Revisaremos sus datos y, si su solicitud se aprueba, le enviaremos un correo para crear su contraseña.</p>
 
 <?php if (!empty($datosVista['mensajeError'])): ?>
     <p class="mensaje mensaje-error" role="alert"><?= Vista::escapar($datosVista['mensajeError']) ?></p>
 <?php endif; ?>
 
-<form method="post" action="<?= Vista::escapar(Vista::url('/solicitar-acceso')) ?>" class="rejilla-campos" data-formulario="solicitud">
+<form method="post" action="<?= Vista::escapar(Vista::url('/solicitar-acceso')) ?>" class="rejilla-campos rejilla-solicitud" data-formulario="solicitud">
     <?= Vista::campoTokenCsrf() ?>
 
-    <div class="campo campo-ancho">
+    <div class="campo campo-tercio">
         <label for="nombres"><?= Vista::icono('persona') ?>Nombre(s)</label>
         <input id="nombres" name="nombres" type="text" required
                minlength="<?= LONGITUD_MINIMA_PARTE_NOMBRE ?>" maxlength="<?= LONGITUD_MAXIMA_NOMBRES_USUARIO ?>"
@@ -60,7 +60,7 @@ $invalido = static fn (array $errores, string $campo): string => isset($errores[
         <?= $errorCampo($errores, 'nombres') ?>
     </div>
 
-    <div class="campo">
+    <div class="campo campo-tercio">
         <label for="apellido-paterno">Apellido paterno</label>
         <input id="apellido-paterno" name="apellido_paterno" type="text" required
                minlength="<?= LONGITUD_MINIMA_PARTE_NOMBRE ?>" maxlength="<?= LONGITUD_MAXIMA_APELLIDO_USUARIO ?>"
@@ -70,8 +70,8 @@ $invalido = static fn (array $errores, string $campo): string => isset($errores[
         <?= $errorCampo($errores, 'apellido_paterno') ?>
     </div>
 
-    <div class="campo">
-        <label for="apellido-materno">Apellido materno <span class="texto-secundario">(opcional)</span></label>
+    <div class="campo campo-tercio">
+        <label for="apellido-materno">Apellido materno <span class="texto-opcional">(opcional)</span></label>
         <input id="apellido-materno" name="apellido_materno" type="text"
                minlength="<?= LONGITUD_MINIMA_PARTE_NOMBRE ?>" maxlength="<?= LONGITUD_MAXIMA_APELLIDO_USUARIO ?>"
                autocomplete="additional-name" data-validar="nombre" data-descripcion="El apellido materno"
@@ -80,19 +80,19 @@ $invalido = static fn (array $errores, string $campo): string => isset($errores[
         <?= $errorCampo($errores, 'apellido_materno') ?>
     </div>
 
-    <div class="campo campo-ancho">
+    <div class="campo campo-mitad">
         <fieldset class="grupo-opciones" data-validar="opcion" data-nombre="tipo_integrante"
                   data-mensaje-vacio="Seleccione si es alumno o profesor."
                   aria-describedby="error-tipo-integrante">
             <legend>Usted es</legend>
             <label><input type="radio" name="tipo_integrante" value="ALUMNO" required <?= $tipoPrevio === 'ALUMNO' ? 'checked' : '' ?>> Alumno</label>
             <label><input type="radio" name="tipo_integrante" value="PROFESOR" <?= $tipoPrevio === 'PROFESOR' ? 'checked' : '' ?>> Profesor</label>
-            <small class="texto-secundario">Solo indica qué dato se revisará; no cambia sus permisos.</small>
+            <small class="texto-secundario">No cambia sus permisos.</small>
         </fieldset>
         <?= $errorCampo($errores, 'tipo_integrante') ?>
     </div>
 
-    <div class="campo campo-ancho">
+    <div class="campo campo-mitad">
         <label for="identificador-institucional"><?= Vista::icono('credencial') ?><span id="etiqueta-identificador"><?= Vista::escapar($etiquetaIdentificador) ?></span></label>
         <input id="identificador-institucional" name="identificador_institucional" type="text" required
                minlength="<?= LONGITUD_MINIMA_IDENTIFICADOR_INSTITUCIONAL ?>" maxlength="<?= LONGITUD_MAXIMA_IDENTIFICADOR_INSTITUCIONAL ?>"

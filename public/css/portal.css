@@ -236,7 +236,7 @@ summary:focus-visible { outline: 3px solid var(--umar-marino); outline-offset: 2
 body { min-height: 100vh; display: flex; flex-direction: column; }
 .contenedor-principal { width: 100%; flex: 1; }
 
-.diseno-acceso { background: #7fb2e5; overflow-x: hidden; }
+.diseno-acceso { background: #d8d2c4; overflow-x: hidden; }
 /* Foto con filtro cálido y velo claro detrás de la tarjeta (decorativos). */
 .diseno-acceso::before,
 .diseno-acceso::after { content: ''; position: fixed; inset: 0; pointer-events: none; }
@@ -268,8 +268,36 @@ body { min-height: 100vh; display: flex; flex-direction: column; }
     box-shadow: 0 20px 50px rgba(11, 37, 69, 0.28), 0 2px 8px rgba(11, 37, 69, 0.12);
     animation: aparecer-tarjeta 0.55s ease-out both;
 }
-/* Formularios con campos en dos columnas (solicitar acceso): tarjeta más ancha. */
-.tarjeta-acceso:has(.rejilla-campos > .campo:not(.campo-ancho)) { max-width: 560px; }
+/* Solicitar acceso: tarjeta ancha y campos repartidos en filas (6 columnas):
+   nombre y apellidos en tercios; tipo e identificador en mitades; correo completo. */
+.tarjeta-acceso:has(.rejilla-solicitud) { max-width: 780px; }
+.rejilla-solicitud { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.rejilla-solicitud > * { grid-column: 1 / -1; }
+.rejilla-solicitud > .campo-tercio { grid-column: span 2; }
+.rejilla-solicitud > .campo-mitad { grid-column: span 3; }
+/* "Usted es": se ve como un campo más (etiqueta arriba, opciones en una caja). */
+.diseno-acceso .rejilla-solicitud .grupo-opciones { margin: 0; padding: 0; border: 0; background: transparent; gap: 6px 0; }
+.rejilla-solicitud .grupo-opciones legend { float: left; width: 100%; margin: 0 0 6px; padding: 0; font-size: 0.8rem; font-weight: 600; color: var(--acceso-tinta); }
+.rejilla-solicitud .grupo-opciones > label {
+    flex: 1;
+    justify-content: center;
+    min-height: 46px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(16, 27, 43, 0.14);
+    font-size: 0.92rem;
+}
+.rejilla-solicitud .grupo-opciones > label:first-of-type { border-radius: 10px 0 0 10px; }
+.rejilla-solicitud .grupo-opciones > label:last-of-type { border-radius: 0 10px 10px 0; border-left: 0; }
+.rejilla-solicitud .grupo-opciones > label:has(input:checked) { background: #eaf1fc; border-color: var(--acceso-azul-500); color: var(--acceso-azul-700); font-weight: 600; }
+.rejilla-solicitud .grupo-opciones > label:has(input:focus-visible) { outline: 3px solid rgba(42, 111, 214, 0.4); outline-offset: 2px; }
+.diseno-acceso .rejilla-solicitud .grupo-opciones.grupo-invalido > label { border-color: var(--color-error); }
+.rejilla-solicitud .grupo-opciones small { margin-top: 2px; }
+.rejilla-solicitud > p { margin: 0; }
+.tarjeta-acceso:has(.rejilla-solicitud) { padding-top: 28px; }
+.tarjeta-acceso:has(.rejilla-solicitud) .logo-institucional { height: 64px; margin-bottom: 8px; }
+.tarjeta-acceso:has(.rejilla-solicitud) .marca-acceso { margin-bottom: 16px; }
+.texto-opcional { font-weight: 400; color: var(--acceso-gris); }
+.diseno-acceso .rejilla-solicitud .texto-secundario { font-size: 0.8rem; line-height: 1.45; }
 @keyframes aparecer-tarjeta { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
 .marca-acceso { text-align: center; margin-bottom: 22px; }
@@ -410,6 +438,8 @@ body { min-height: 100vh; display: flex; flex-direction: column; }
     .pantalla-acceso { padding: 18px 14px; }
     .tarjeta-acceso { padding: 30px 22px 24px; }
     .rejilla-campos { grid-template-columns: 1fr; }
+    .rejilla-solicitud > .campo-tercio,
+    .rejilla-solicitud > .campo-mitad { grid-column: 1 / -1; }
     .decisiones-solicitud { grid-template-columns: 1fr; }
     .tarjeta-amplia { overflow-x: auto; }
 }
