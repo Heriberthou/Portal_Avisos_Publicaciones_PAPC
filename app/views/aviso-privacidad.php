@@ -39,5 +39,5 @@ declare(strict_types=1);
         <li>Procedimiento para ejercer derechos de acceso, rectificación, cancelación u oposición.</li>
     </ul>
 
-    <p><a href="<?= Vista::escapar(Vista::url('/')) ?>">Volver al portal</a></p>
+    <p><a href="<?= Vista::escapar(Vista::url('/')) ?>">Volver al inicio</a></p>
 </section>

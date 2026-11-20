@@ -86,7 +86,7 @@
                 valor = valor.trim();
                 maximo = leerLimite(campo, 'maxlength', 150);
                 if (valor === '') {
-                    return 'El correo electrónico es obligatorio.';
+                    return 'Escriba su correo electrónico.';
                 }
                 if (contarCaracteres(valor) > maximo) {
                     return 'El correo no puede tener más de ' + maximo + ' caracteres.';
@@ -101,7 +101,7 @@
                 minimo = leerLimite(campo, 'minlength', 15);
                 maximo = leerLimite(campo, 'maxlength', 128);
                 if (valor === '') {
-                    return 'La contraseña es obligatoria.';
+                    return 'Escriba una contraseña.';
                 }
                 longitud = contarCaracteres(valor);
                 if (longitud < minimo) {

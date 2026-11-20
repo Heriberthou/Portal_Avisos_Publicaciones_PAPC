@@ -19,6 +19,11 @@ riesgo, propuesta). Claude Code lo corrige y responde en el mismo archivo.
 ### Claude Code
 
 - **Tarea en curso:** ninguna.
+- **Tarea terminada (20/11/2026):** rediseño de las pantallas de acceso y revisión de textos (trato de usted,
+  sin mensajes técnicos, "verificación en dos pasos"). Archivos: `app/views/` (nuevos parciales `acceso-inicio`,
+  `acceso-fin`, `mensajes-flash`; se eliminó `bienvenida.php`), `public/css/portal.css`, `public/img/`,
+  `app/nucleo/Vista.php` y nuevo `Etiquetas.php`, `PortalController`, mensajes de servicios y controladores,
+  `tests/pruebas-http.php` (H01 e inicio). **Sin cambios de base de datos.** Pruebas 79/79.
 - **Tarea terminada (20/11/2026):** corrección de los hallazgos R-01 a R-08 de `docs/revision-codex.md`
   (respondidos ahí; estado "Corregido; pendiente de verificación de Codex"). Pruebas 79/79.
   - Archivos que se modifican: `app/servicios/` (`ServicioAdministracionUsuarios`, `ServicioSegundoFactor`,

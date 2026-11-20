@@ -26,13 +26,13 @@ $identificadorEnmascarado = $identificador === ''
         <dt>Correo electrónico</dt>
         <dd><?= Vista::escapar($usuarioActual['correo_electronico_usuario']) ?></dd>
         <dt>Tipo de integrante</dt>
-        <dd><?= Vista::escapar($usuarioActual['tipo_integrante_usuario'] ?? 'Sin clasificar') ?></dd>
+        <dd><?= Vista::escapar(Etiquetas::tipoIntegrante($usuarioActual['tipo_integrante_usuario'] ?? null)) ?></dd>
         <dt>Matrícula o identificador</dt>
         <dd><?= Vista::escapar($identificadorEnmascarado) ?></dd>
-        <dt>Rol de seguridad</dt>
-        <dd><?= Vista::escapar($usuarioActual['rol_usuario']) ?></dd>
+        <dt>Rol</dt>
+        <dd><?= Vista::escapar(Etiquetas::rol($usuarioActual['rol_usuario'])) ?></dd>
         <dt>Estado de la cuenta</dt>
-        <dd><?= Vista::escapar($usuarioActual['estado_cuenta_usuario']) ?></dd>
+        <dd><?= Vista::escapar(Etiquetas::estadoCuenta($usuarioActual['estado_cuenta_usuario'])) ?></dd>
     </dl>
 
     <?php if ($datosVista['puedeRevisarSolicitudes'] || $datosVista['puedeAdministrar']): ?>
@@ -48,7 +48,7 @@ $identificadorEnmascarado = $identificador === ''
                 <li><a href="<?= Vista::escapar(Vista::url('/admin/bitacora')) ?>">Bitácora</a></li>
             <?php endif; ?>
             <?php if ($datosVista['puedeAsignarRoles']): ?>
-                <li><a href="<?= Vista::escapar(Vista::url('/admin/roles')) ?>">Roles y segundo factor (solo principal)</a></li>
+                <li><a href="<?= Vista::escapar(Vista::url('/admin/roles')) ?>">Roles y verificación en dos pasos</a></li>
             <?php endif; ?>
         </ul>
     <?php else: ?>

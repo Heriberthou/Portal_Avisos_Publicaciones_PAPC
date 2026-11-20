@@ -11,22 +11,15 @@
 declare(strict_types=1);
 $tipoMensaje = in_array($datosVista['tipoMensaje'] ?? '', ['exito', 'error', 'aviso'], true) ? $datosVista['tipoMensaje'] : 'aviso';
 ?>
-<div class="pantalla-acceso">
-    <?php require RUTA_RAIZ . '/app/views/parciales/panel-institucional.php'; ?>
-
-    <section class="panel-formulario">
-        <h1 class="titulo-acceso"><?= Vista::escapar($datosVista['titulo'] ?? '') ?></h1>
-        <p class="mensaje mensaje-<?= Vista::escapar($tipoMensaje) ?>" role="<?= $tipoMensaje === 'error' ? 'alert' : 'status' ?>">
-            <?= Vista::escapar($datosVista['mensaje'] ?? '') ?>
-        </p>
-        <div class="acciones-acceso acciones-izquierda">
-            <?php if (!empty($datosVista['enlaceAccion'])): ?>
-                <a class="boton-principal boton-enlace" href="<?= Vista::escapar(Vista::url((string) $datosVista['enlaceAccion'])) ?>"><?= Vista::escapar($datosVista['textoAccion'] ?? 'Continuar') ?></a>
-            <?php endif; ?>
-            <p class="texto-secundario enlaces-pie">
-                <a href="<?= Vista::escapar(Vista::url('/iniciar-sesion')) ?>">Ir a iniciar sesión</a>
-                <a href="<?= Vista::escapar(Vista::url('/ayuda')) ?>">Ayuda</a>
-            </p>
-        </div>
-    </section>
+<?php require RUTA_RAIZ . '/app/views/parciales/acceso-inicio.php'; ?>
+<h1 class="titulo-acceso"><?= Vista::escapar($datosVista['titulo'] ?? '') ?></h1>
+<p class="mensaje mensaje-<?= Vista::escapar($tipoMensaje) ?>" role="<?= $tipoMensaje === 'error' ? 'alert' : 'status' ?>">
+    <?= Vista::escapar($datosVista['mensaje'] ?? '') ?>
+</p>
+<div class="acciones-acceso">
+    <?php if (!empty($datosVista['enlaceAccion'])): ?>
+        <a class="boton-principal boton-enlace" href="<?= Vista::escapar(Vista::url((string) $datosVista['enlaceAccion'])) ?>"><?= Vista::escapar($datosVista['textoAccion'] ?? 'Continuar') ?></a>
+    <?php endif; ?>
+    <p class="texto-secundario"><a href="<?= Vista::escapar(Vista::url('/iniciar-sesion')) ?>">Ir a iniciar sesión</a></p>
 </div>
+<?php require RUTA_RAIZ . '/app/views/parciales/acceso-fin.php'; ?>

@@ -14,6 +14,29 @@ final class Vista
     /** Formato permitido para nombres de vista (evita recorrido de rutas). */
     private const PATRON_NOMBRE_VISTA = '#^[a-z0-9\-]+(/[a-z0-9\-]+)*$#';
 
+    /** Diseño de las páginas internas: barra superior y tarjeta. */
+    public const DISENO_GENERAL = 'general';
+
+    /** Diseño de las pantallas de acceso: fondo de playa y tarjeta de vidrio. */
+    public const DISENO_ACCESO = 'acceso';
+
+    /**
+     * Íconos de línea (24×24) usados junto a etiquetas y botones. Son
+     * decorativos: el texto de la etiqueta sigue siendo el que se lee.
+     */
+    private const ICONOS = [
+        'correo'     => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+        'candado'    => '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+        'persona'    => '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+        'credencial' => '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16a3 3 0 0 1 6 0M14 10h4M14 14h4"/>',
+        'escudo'     => '<path d="M12 3 5 6v5c0 4.5 3 8.5 7 10 4-1.5 7-5.5 7-10V6z"/><path d="m9 12 2 2 4-4"/>',
+        'entrar'     => '<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l4-4-4-4M14 12H4"/>',
+        'enviar'     => '<path d="M21 3 10 14"/><path d="M21 3 14 21l-4-7-7-4z"/>',
+    ];
+
+    /** Diseño elegido por la vista que se está renderizando. */
+    private static string $disenoActual = self::DISENO_GENERAL;
+
     /**
      * Renderiza una vista dentro del diseño común (encabezado y pie).
      *
@@ -24,10 +47,52 @@ final class Vista
      */
     public static function renderizar(string $nombreVista, array $datosVista = []): string
     {
+        // La vista se ejecuta primero: así puede elegir su diseño
+        // (Vista::usarDiseno) antes de que se genere el encabezado.
+        self::$disenoActual = self::DISENO_GENERAL;
         $contenidoPrincipal = self::incluirPlantilla($nombreVista, $datosVista);
         return self::incluirPlantilla('parciales/encabezado', $datosVista)
             . $contenidoPrincipal
             . self::incluirPlantilla('parciales/pie', $datosVista);
+    }
+
+    /**
+     * Elige el diseño de la página. Lo llaman las vistas (por ejemplo,
+     * parciales/acceso-inicio.php) antes de generar su contenido.
+     *
+     * @param string $diseno Vista::DISENO_GENERAL o Vista::DISENO_ACCESO.
+     * @return void
+     * @throws InvalidArgumentException Si el diseño no existe.
+     */
+    public static function usarDiseno(string $diseno): void
+    {
+        if (!in_array($diseno, [self::DISENO_GENERAL, self::DISENO_ACCESO], true)) {
+            throw new InvalidArgumentException('Diseño de página no válido.');
+        }
+        self::$disenoActual = $diseno;
+    }
+
+    /**
+     * @return string Diseño de la página que se está renderizando.
+     */
+    public static function obtenerDiseno(): string
+    {
+        return self::$disenoActual;
+    }
+
+    /**
+     * Devuelve un ícono SVG en línea, oculto para lectores de pantalla.
+     *
+     * @param string $nombre Clave de Vista::ICONOS.
+     * @return string HTML del ícono (cadena vacía si no existe).
+     */
+    public static function icono(string $nombre): string
+    {
+        if (!isset(self::ICONOS[$nombre])) {
+            return '';
+        }
+        return '<svg class="icono" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+            . self::ICONOS[$nombre] . '</svg>';
     }
 
     /**

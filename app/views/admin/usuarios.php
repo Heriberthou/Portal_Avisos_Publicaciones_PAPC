@@ -50,10 +50,10 @@ $textosEstado = [
                     <?php endif; ?>
                 </td>
                 <td><?= Vista::escapar($usuarioFila['correo_electronico_usuario']) ?></td>
-                <td><?= Vista::escapar($usuarioFila['tipo_integrante_usuario'] ?? 'Sin clasificar') ?></td>
-                <td><?= Vista::escapar($usuarioFila['rol_usuario']) ?></td>
+                <td><?= Vista::escapar(Etiquetas::tipoIntegrante($usuarioFila['tipo_integrante_usuario'] ?? null)) ?></td>
+                <td><?= Vista::escapar(Etiquetas::rol($usuarioFila['rol_usuario'])) ?></td>
                 <td>
-                    <span class="etiqueta-estado estado-<?= Vista::escapar(strtolower($usuarioFila['estado_cuenta_usuario'])) ?>"><?= Vista::escapar($usuarioFila['estado_cuenta_usuario']) ?></span>
+                    <span class="etiqueta-estado estado-<?= Vista::escapar(strtolower($usuarioFila['estado_cuenta_usuario'])) ?>"><?= Vista::escapar(Etiquetas::estadoCuenta($usuarioFila['estado_cuenta_usuario'])) ?></span>
                     <?php if ($esHeredadaPendiente): ?>
                         <br><small class="texto-secundario">Cuenta anterior pendiente de validación institucional</small>
                     <?php endif; ?>

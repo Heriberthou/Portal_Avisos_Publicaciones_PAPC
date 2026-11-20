@@ -208,7 +208,7 @@ final class ServicioSolicitudAcceso
                 'identificador'   => $identificador,
             ], $idActor);
             if (!$this->solicitudAccesoModel->aprobarSolicitud($idSolicitud, $idActor, $metodoVerificacion, $idUsuarioCreado)) {
-                throw new RuntimeException('La solicitud cambió durante la aprobación.');
+                throw new RuntimeException('La solicitud cambió mientras se procesaba. Revísela de nuevo.');
             }
             $this->tokenCuentaModel->crearToken($idUsuarioCreado, TokenCuentaModel::FINALIDAD_ACTIVACION, GeneradorTokens::calcularHashToken($tokenActivacion), VIGENCIA_TOKEN_ACTIVACION_SEGUNDOS);
 
@@ -231,7 +231,7 @@ final class ServicioSolicitudAcceso
             return $this->resultado(true, 'Solicitud aprobada. El envío de la invitación está pendiente; reintente desde la administración de solicitudes.');
         }
         return $this->resultado(true, $this->servicioCorreo->esModoBuzonPruebas()
-            ? 'Solicitud aprobada. Se generó una invitación de activación; quedó en el buzón de pruebas del servidor (no se envió por correo).'
+            ? 'Solicitud aprobada. Se generó una invitación de activación; quedó en el buzón de pruebas (modo de demostración; no se envió por correo).'
             : 'Solicitud aprobada. Se generó una invitación de activación y se entregó al servicio de correo.');
     }
 
@@ -268,7 +268,7 @@ final class ServicioSolicitudAcceso
                 return $this->resultado(false, $errorDecision['mensaje']);
             }
             if (!$this->solicitudAccesoModel->rechazarSolicitud($idSolicitud, $idActor, $motivo)) {
-                throw new RuntimeException('La solicitud cambió durante el rechazo.');
+                throw new RuntimeException('La solicitud cambió mientras se procesaba. Revísela de nuevo.');
             }
             // El motivo queda en solicitud_acceso (acceso restringido); la bitácora solo registra la decisión.
             $this->auditoriaModel->registrarEventoAuditoria($idActor, AuditoriaModel::ACCION_SOLICITUD_RECHAZADA, 'solicitud_acceso', $idSolicitud);
@@ -318,7 +318,7 @@ final class ServicioSolicitudAcceso
             return $this->resultado(false, 'Se generó un enlace nuevo, pero el envío sigue pendiente. Intente de nuevo más tarde.');
         }
         return $this->resultado(true, $this->servicioCorreo->esModoBuzonPruebas()
-            ? 'Se generó una invitación nueva; quedó en el buzón de pruebas del servidor. El enlace anterior dejó de funcionar.'
+            ? 'Se generó una invitación nueva; quedó en el buzón de pruebas (modo de demostración). El enlace anterior dejó de funcionar.'
             : 'Se generó una invitación nueva y se entregó al servicio de correo. El enlace anterior dejó de funcionar.');
     }
 

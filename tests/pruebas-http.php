@@ -122,12 +122,13 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
             return;
         }
 
-        $marco->probar('H01', 'AC-01: portada y "Solicitar acceso" públicas, sin contraseña, rol ni opciones administrativas', static function () use ($nuevoCliente, $obtenerUbicacion): void {
+        $marco->probar('H01', 'AC-01: la dirección principal lleva al inicio de sesión; "Solicitar acceso" es pública, sin contraseña, rol ni opciones administrativas', static function () use ($nuevoCliente, $obtenerUbicacion): void {
             $cliente = $nuevoCliente();
-            $portada = $cliente->obtener('/');
-            MarcoPruebas::afirmarIgual(200, $portada['codigo'], 'Portada');
+            MarcoPruebas::afirmarIgual('/iniciar-sesion', $obtenerUbicacion($cliente->obtener('/')), 'La dirección principal lleva al inicio de sesión');
+            $portada = $cliente->obtener('/iniciar-sesion');
+            MarcoPruebas::afirmarIgual(200, $portada['codigo'], 'Inicio de sesión');
             MarcoPruebas::afirmar(str_contains($portada['cuerpo'], 'Iniciar sesión') && str_contains($portada['cuerpo'], 'Solicitar acceso'), 'Dos caminos claros');
-            MarcoPruebas::afirmar(str_contains($portada['cuerpo'], 'Portal en desarrollo'), 'No simula módulos inexistentes');
+            MarcoPruebas::afirmar(!preg_match('/\b(tu|tus|Ingresa|Regístrate)\b/u', strip_tags($portada['cuerpo'])), 'Trato de usted, sin tuteo');
             MarcoPruebas::afirmar(preg_match('/^Referrer-Policy: no-referrer/mi', $portada['encabezados']) === 1, 'Referrer-Policy: no-referrer');
 
             $formulario = $cliente->obtener('/solicitar-acceso');
@@ -257,7 +258,7 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
             MarcoPruebas::afirmar(preg_match('/^Set-Cookie: papc_sesion=.*SameSite=Lax/mi', $respuesta['encabezados']) === 1, 'Cookie SameSite=Lax');
             $inicio = $cliente->obtener('/inicio');
             MarcoPruebas::afirmarIgual(200, $inicio['codigo'], '/inicio accesible');
-            MarcoPruebas::afirmar(str_contains($inicio['cuerpo'], 'Ana Alumna') && str_contains($inicio['cuerpo'], 'USUARIO') && str_contains($inicio['cuerpo'], 'ACTIVA'), 'Nombre, rol y estado');
+            MarcoPruebas::afirmar(str_contains($inicio['cuerpo'], 'Ana Alumna') && str_contains($inicio['cuerpo'], '<dd>Usuario</dd>') && str_contains($inicio['cuerpo'], '<dd>Activa</dd>'), 'Nombre, rol y estado con palabras comunes');
             MarcoPruebas::afirmar(!str_contains($inicio['cuerpo'], 'A3001') && str_contains($inicio['cuerpo'], '••001'), 'Matrícula enmascarada');
             MarcoPruebas::afirmar(!str_contains($inicio['cuerpo'], '/admin/'), 'Sin enlaces administrativos');
             MarcoPruebas::afirmar(preg_match('/^Cache-Control: no-store/mi', $inicio['encabezados']) === 1, 'AC-22: no se guarda en caché');

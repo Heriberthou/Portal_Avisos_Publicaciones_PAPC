@@ -43,7 +43,7 @@ final class PoliticaContrasenas
     public static function validarNuevaContrasena(?string $contrasena, array $datosPersonales = []): ?string
     {
         if ($contrasena === null || $contrasena === '') {
-            return 'La contraseña es obligatoria.';
+            return 'Escriba una contraseña.';
         }
         $longitud = mb_strlen($contrasena);
         if ($longitud < LONGITUD_MINIMA_CONTRASENA) {

@@ -9,7 +9,7 @@
 declare(strict_types=1);
 ?>
 <section class="tarjeta-formulario">
-    <h1>Error <?= (int) ($datosVista['codigoEstado'] ?? 500) ?></h1>
-    <p class="mensaje mensaje-error"><?= Vista::escapar($datosVista['mensajeError'] ?? 'Ocurrió un error.') ?></p>
-    <p><a href="<?= Vista::escapar(Vista::url('/')) ?>">Ir al inicio del portal</a></p>
+    <h1><?= Vista::escapar($datosVista['tituloPagina'] ?? 'Algo salió mal') ?></h1>
+    <p class="mensaje mensaje-error"><?= Vista::escapar($datosVista['mensajeError'] ?? 'No fue posible completar la operación.') ?></p>
+    <p><a href="<?= Vista::escapar(Vista::url('/')) ?>">Volver al inicio</a></p>
 </section>

@@ -296,13 +296,13 @@ final class ValidadorEntrada
     private static function validarIdentificador(?string $identificador): ?string
     {
         if ($identificador === null) {
-            return 'Escriba su matrícula o identificador institucional.';
+            return 'Escriba su matrícula o número de personal.';
         }
         $longitud = mb_strlen($identificador);
         if ($longitud < LONGITUD_MINIMA_IDENTIFICADOR_INSTITUCIONAL || $longitud > LONGITUD_MAXIMA_IDENTIFICADOR_INSTITUCIONAL
             || preg_match(self::PATRON_IDENTIFICADOR, $identificador) !== 1) {
             return sprintf(
-                'El identificador debe tener entre %d y %d letras, números o guiones.',
+                'La matrícula o número de personal debe tener entre %d y %d letras, números o guiones.',
                 LONGITUD_MINIMA_IDENTIFICADOR_INSTITUCIONAL,
                 LONGITUD_MAXIMA_IDENTIFICADOR_INSTITUCIONAL
             );
@@ -341,7 +341,7 @@ final class ValidadorEntrada
     private static function validarCorreo(?string $correoElectronico): ?string
     {
         if ($correoElectronico === null || $correoElectronico === '') {
-            return 'El correo electrónico es obligatorio.';
+            return 'Escriba su correo electrónico.';
         }
         if (mb_strlen($correoElectronico) > LONGITUD_MAXIMA_CORREO_ELECTRONICO) {
             return sprintf('El correo no puede tener más de %d caracteres.', LONGITUD_MAXIMA_CORREO_ELECTRONICO);

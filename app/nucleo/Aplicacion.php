@@ -60,7 +60,7 @@ final class Aplicacion
             'servicioSolicitudAcceso' => $servicioSolicitudAcceso,
             'servicioCredenciales'    => $servicioCredenciales,
             'servicioAdministracion'  => $servicioAdministracion,
-            'portalController'        => new PortalController($gestorSesion),
+            'portalController'        => new PortalController(),
             'authController'          => new AuthController($servicioAutenticacion, $gestorSesion, $auditoriaModel, $roleMiddleware),
             'segundoFactorController' => new SegundoFactorController($servicioSegundoFactor, $gestorSesion),
             'solicitudAccesoController' => new SolicitudAccesoController($servicioSolicitudAcceso, $gestorSesion, $auditoriaModel, $servicioCorreo),
@@ -105,9 +105,9 @@ final class Aplicacion
                 'ruta'    => Solicitud::obtenerRuta(),
             ]);
             $respuesta = Respuesta::vista('error', [
-                'tituloPagina'  => 'Error',
+                'tituloPagina'  => 'Algo salió mal',
                 'codigoEstado'  => 500,
-                'mensajeError'  => 'Ocurrió un error interno. Inténtalo más tarde.',
+                'mensajeError'  => 'No fue posible completar la operación. Intente de nuevo en unos minutos.',
             ], 500);
         }
 

@@ -3,10 +3,14 @@
  * Encabezado común. Variables: $datosVista['tituloPagina'], $datosVista['mensajes'].
  * Todo valor dinámico se imprime con Vista::escapar().
  *
+ * Diseño general: barra superior y mensajes arriba del contenido.
+ * Diseño de acceso: sin barra (la tarjeta ya muestra la marca); los mensajes
+ * se imprimen dentro de la tarjeta (parciales/acceso-inicio.php).
+ *
  * @var array<string, mixed> $datosVista
  */
 declare(strict_types=1);
-$mensajesFlash = $datosVista['mensajes'] ?? [];
+$disenoPagina = Vista::obtenerDiseno();
 ?>
 <!doctype html>
 <html lang="es-MX">
@@ -16,7 +20,8 @@ $mensajesFlash = $datosVista['mensajes'] ?? [];
     <title><?= Vista::escapar($datosVista['tituloPagina'] ?? 'PAPC') ?> · PAPC</title>
     <link rel="stylesheet" href="<?= Vista::escapar(Vista::url('/css/portal.css')) ?>">
 </head>
-<body>
+<body class="diseno-<?= Vista::escapar($disenoPagina) ?>">
+<?php if ($disenoPagina === Vista::DISENO_GENERAL): ?>
 <header class="barra-superior">
     <img class="logo-barra" src="<?= Vista::escapar(Vista::url('/img/logo-umar.png')) ?>" alt="" width="44" height="44">
     <span class="textos-barra">
@@ -24,9 +29,8 @@ $mensajesFlash = $datosVista['mensajes'] ?? [];
         <span class="nombre-institucion">Universidad del Mar · Campus Puerto Escondido</span>
     </span>
 </header>
+<?php endif; ?>
 <main class="contenedor-principal">
-<?php foreach ($mensajesFlash as $mensajeFlash): ?>
-    <p class="mensaje mensaje-<?= Vista::escapar($mensajeFlash['tipo'] ?? 'aviso') ?>" role="status">
-        <?= Vista::escapar($mensajeFlash['mensaje'] ?? '') ?>
-    </p>
-<?php endforeach; ?>
+<?php if ($disenoPagina === Vista::DISENO_GENERAL): ?>
+    <?php require RUTA_RAIZ . '/app/views/parciales/mensajes-flash.php'; ?>
+<?php endif; ?>

@@ -140,7 +140,7 @@ final class ServicioAdministracionUsuarios
 
             $esValidacionHeredada = $estadoNuevo === UsuarioModel::ESTADO_ACTIVA && UsuarioModel::esCuentaHeredadaPendiente($usuarioObjetivo);
             if (!$this->usuarioModel->actualizarEstadoCuenta($idUsuarioObjetivo, $estadoAnterior, $estadoNuevo)) {
-                throw new RuntimeException('El estado de la cuenta cambió durante la operación.');
+                throw new RuntimeException('La cuenta cambió mientras se procesaba la operación. Revise sus datos e intente de nuevo.');
             }
             if ($esValidacionHeredada) {
                 $this->usuarioModel->registrarValidacionInstitucional($idUsuarioObjetivo, $idUsuarioActor);
@@ -184,7 +184,7 @@ final class ServicioAdministracionUsuarios
         }
         if ($idUsuarioObjetivo === $idUsuarioActor) {
             $this->auditarDenegacionPrivilegio($idUsuarioActor, $idUsuarioObjetivo, 'SEGUNDO_FACTOR_PROPIO', 'RESTABLECER');
-            return $this->resultado(false, 'No puede restablecer su propio segundo factor. Debe hacerlo otro administrador principal o la consola del servidor.');
+            return $this->resultado(false, 'No puede restablecer su propia verificación en dos pasos. Debe hacerlo otro administrador principal.');
         }
         $errorReautenticacion = $this->exigirReautenticacion($idUsuarioActor, $idUsuarioObjetivo, $contrasenaActor, 'RESTABLECER_SEGUNDO_FACTOR');
         if ($errorReautenticacion !== null) {
@@ -200,7 +200,7 @@ final class ServicioAdministracionUsuarios
             $resultadoRestablecer = $this->restablecerEnTransaccion($idUsuarioObjetivo, $idUsuarioActor, 'WEB');
             if ($resultadoRestablecer === null) {
                 $this->conexion->rollBack();
-                return $this->resultado(false, 'Esa cuenta no tiene un segundo factor configurado.');
+                return $this->resultado(false, 'Esa cuenta no tiene activada la verificación en dos pasos.');
             }
             $this->conexion->commit();
         } catch (Throwable $excepcion) {
@@ -209,7 +209,7 @@ final class ServicioAdministracionUsuarios
         }
 
         $enviado = $this->servicioCorreo->enviarEnlaceEnrolamiento($resultadoRestablecer['correo'], $resultadoRestablecer['nombres'], $resultadoRestablecer['token']);
-        return $this->resultado(true, 'Segundo factor restablecido. ' . $this->describirEnvioEnlace($enviado, $idUsuarioObjetivo));
+        return $this->resultado(true, 'Verificación en dos pasos restablecida. ' . $this->describirEnvioEnlace($enviado, $idUsuarioObjetivo));
     }
 
     /**
@@ -232,14 +232,14 @@ final class ServicioAdministracionUsuarios
             $resultadoRestablecer = $this->restablecerEnTransaccion((int) $usuario['id_usuario'], null, 'CONSOLA');
             if ($resultadoRestablecer === null) {
                 $this->conexion->rollBack();
-                return $this->resultado(false, 'Esa cuenta no tiene un segundo factor configurado.') + ['tokenEnrolamiento' => null];
+                return $this->resultado(false, 'Esa cuenta no tiene activada la verificación en dos pasos.') + ['tokenEnrolamiento' => null];
             }
             $this->conexion->commit();
         } catch (Throwable $excepcion) {
             $this->revertir();
             throw $excepcion;
         }
-        return $this->resultado(true, 'Segundo factor restablecido. La cuenta deberá configurarlo de nuevo con el enlace.') + ['tokenEnrolamiento' => $resultadoRestablecer['token']];
+        return $this->resultado(true, 'Verificación en dos pasos restablecida. La persona deberá activarla de nuevo con el enlace.') + ['tokenEnrolamiento' => $resultadoRestablecer['token']];
     }
 
     /**
@@ -429,7 +429,7 @@ final class ServicioAdministracionUsuarios
                     $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_VALIDACION_CUENTA_HEREDADA, 'usuario', $idUsuario, ['canal' => 'CONSOLA']);
                 } elseif (!UsuarioModel::puedeIniciarSesion($usuario)) {
                     $this->conexion->rollBack();
-                    return $this->resultado(false, 'Esa cuenta no está ACTIVA. Actívela antes de promoverla.') + $sinTokens;
+                    return $this->resultado(false, 'Esa cuenta no está activa. Actívela antes de asignarle un rol administrativo.') + $sinTokens;
                 }
                 $rolAnterior = (string) $usuario['rol_usuario'];
             } elseif ($datosNuevaCuenta !== null) {
@@ -466,8 +466,8 @@ final class ServicioAdministracionUsuarios
             throw $excepcion;
         }
         $mensaje = $tokenActivacion === null
-            ? 'Cuenta habilitada como ADMINISTRADOR_PRINCIPAL. Debe configurar su segundo factor con el enlace.'
-            : 'Cuenta ADMINISTRADOR_PRINCIPAL creada como INVITADA. Debe activarla con el primer enlace y después configurar su segundo factor con el segundo.';
+            ? 'Cuenta habilitada como administrador principal. Debe activar la verificación en dos pasos con el enlace.'
+            : 'Cuenta de administrador principal creada y pendiente de activar. Use el primer enlace para activarla y el segundo para activar la verificación en dos pasos.';
         return $this->resultado(true, $mensaje) + ['tokenActivacion' => $tokenActivacion, 'tokenEnrolamiento' => $tokenEnrolamiento];
     }
 
@@ -575,11 +575,11 @@ final class ServicioAdministracionUsuarios
     {
         if (!$enviado) {
             $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_ENVIO_CORREO_FALLIDO, 'usuario', $idUsuarioObjetivo, ['tipoCorreo' => 'ENROLAMIENTO_MFA']);
-            return 'No fue posible enviar el enlace para configurar el segundo factor; la persona puede pedir otro al iniciar sesión.';
+            return 'No fue posible enviar el enlace para activar la verificación en dos pasos; la persona puede pedir otro al iniciar sesión.';
         }
         return $this->servicioCorreo->esModoBuzonPruebas()
-            ? 'El enlace para configurar el segundo factor quedó en el buzón de pruebas del servidor (no se envió por correo).'
-            : 'Se envió a su correo el enlace para configurar el segundo factor.';
+            ? 'El enlace para activar la verificación en dos pasos quedó en el buzón de pruebas (modo de demostración; no se envió por correo).'
+            : 'Se envió a su correo el enlace para activar la verificación en dos pasos.';
     }
 
     /**

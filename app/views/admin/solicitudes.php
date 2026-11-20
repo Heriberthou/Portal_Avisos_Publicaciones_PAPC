@@ -27,7 +27,7 @@ $estadosFiltro = ['PENDIENTE' => 'Pendientes', 'APROBADA' => 'Aprobadas', 'RECHA
         <select id="filtro-tipo" name="tipo">
             <option value="">Todos</option>
             <?php foreach (UsuarioModel::TIPOS_INTEGRANTE as $tipo): ?>
-                <option value="<?= Vista::escapar($tipo) ?>" <?= $datosVista['filtroTipo'] === $tipo ? 'selected' : '' ?>><?= Vista::escapar(ucfirst(strtolower($tipo))) ?></option>
+                <option value="<?= Vista::escapar($tipo) ?>" <?= $datosVista['filtroTipo'] === $tipo ? 'selected' : '' ?>><?= Vista::escapar(Etiquetas::tipoIntegrante($tipo)) ?></option>
             <?php endforeach; ?>
         </select>
         <label for="filtro-busqueda">Buscar</label>
@@ -54,11 +54,11 @@ $estadosFiltro = ['PENDIENTE' => 'Pendientes', 'APROBADA' => 'Aprobadas', 'RECHA
                 <tr>
                     <td><?= Vista::escapar($solicitud['fecha_creacion_solicitud']) ?></td>
                     <td><?= Vista::escapar(trim($solicitud['nombres_solicitante'] . ' ' . $solicitud['apellido_paterno_solicitante'] . ' ' . ($solicitud['apellido_materno_solicitante'] ?? ''))) ?></td>
-                    <td><?= Vista::escapar($solicitud['tipo_integrante_solicitado']) ?></td>
+                    <td><?= Vista::escapar(Etiquetas::tipoIntegrante($solicitud['tipo_integrante_solicitado'])) ?></td>
                     <td><?= Vista::escapar($solicitud['identificador_institucional_solicitante']) ?></td>
                     <td><?= Vista::escapar($solicitud['correo_electronico_solicitante']) ?></td>
                     <td>
-                        <span class="etiqueta-estado estado-<?= Vista::escapar(strtolower($solicitud['estado_solicitud'])) ?>"><?= Vista::escapar($solicitud['estado_solicitud']) ?></span>
+                        <span class="etiqueta-estado estado-<?= Vista::escapar(strtolower($solicitud['estado_solicitud'])) ?>"><?= Vista::escapar(Etiquetas::estadoSolicitud($solicitud['estado_solicitud'])) ?></span>
                         <?php if ($solicitud['fecha_verificacion_correo_solicitud'] !== null): ?>
                             <br><small class="texto-secundario">Correo verificado</small>
                         <?php endif; ?>

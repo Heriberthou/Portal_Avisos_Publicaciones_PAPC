@@ -3,33 +3,24 @@
 declare(strict_types=1);
 
 /**
- * Páginas públicas informativas (pantalla A de la especificación 1.3):
- * bienvenida, ayuda y aviso de privacidad. No simulan módulos que aún no
- * existen (avisos, comentarios): indican "Portal en desarrollo".
+ * Páginas públicas informativas: ayuda y aviso de privacidad.
+ *
+ * La dirección principal (/) no tiene pantalla propia: lleva al inicio de
+ * sesión, o al inicio de la cuenta si ya hay una sesión abierta. Lo
+ * importante de esta etapa es el acceso, no una portada.
  */
 final class PortalController
 {
-    /**
-     * @param GestorSesion $gestorSesion Mensajes flash.
-     */
-    public function __construct(private readonly GestorSesion $gestorSesion)
-    {
-    }
-
     /**
      * GET /
      *
      * @param array<string, mixed>|null $usuarioActual Usuario o null.
      * @param array<mixed> $datosFormulario No se usan.
-     * @return Respuesta Bienvenida pública.
+     * @return Respuesta Redirección a /iniciar-sesion o a /inicio.
      */
-    public function mostrarBienvenida(?array $usuarioActual, array $datosFormulario): Respuesta
+    public function irAlInicio(?array $usuarioActual, array $datosFormulario): Respuesta
     {
-        return Respuesta::vista('bienvenida', [
-            'tituloPagina'  => 'Bienvenida',
-            'mensajes'      => $this->gestorSesion->extraerMensajesFlash(),
-            'usuarioActual' => $usuarioActual,
-        ]);
+        return Respuesta::redireccion($usuarioActual === null ? '/iniciar-sesion' : '/inicio');
     }
 
     /**

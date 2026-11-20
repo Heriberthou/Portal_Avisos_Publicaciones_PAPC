@@ -24,7 +24,7 @@ $cuentaVinculada = $datosVista['cuentaVinculada'];
         <dt>Nombre</dt>
         <dd><?= Vista::escapar(trim($solicitud['nombres_solicitante'] . ' ' . $solicitud['apellido_paterno_solicitante'] . ' ' . ($solicitud['apellido_materno_solicitante'] ?? ''))) ?></dd>
         <dt>Tipo de integrante solicitado</dt>
-        <dd><?= Vista::escapar($solicitud['tipo_integrante_solicitado']) ?></dd>
+        <dd><?= Vista::escapar(Etiquetas::tipoIntegrante($solicitud['tipo_integrante_solicitado'])) ?></dd>
         <dt>Matrícula o identificador</dt>
         <dd><?= Vista::escapar($solicitud['identificador_institucional_solicitante']) ?></dd>
         <dt>Correo de contacto</dt>
@@ -33,7 +33,7 @@ $cuentaVinculada = $datosVista['cuentaVinculada'];
         <dt>Fecha de la solicitud</dt>
         <dd><?= Vista::escapar($solicitud['fecha_creacion_solicitud']) ?></dd>
         <dt>Estado</dt>
-        <dd><span class="etiqueta-estado estado-<?= Vista::escapar(strtolower($solicitud['estado_solicitud'])) ?>"><?= Vista::escapar($solicitud['estado_solicitud']) ?></span></dd>
+        <dd><span class="etiqueta-estado estado-<?= Vista::escapar(strtolower($solicitud['estado_solicitud'])) ?>"><?= Vista::escapar(Etiquetas::estadoSolicitud($solicitud['estado_solicitud'])) ?></span></dd>
         <?php if (!$esPendiente): ?>
             <dt>Resuelta por</dt>
             <dd><?= Vista::escapar($solicitud['nombre_revisor'] ?? '—') ?>, el <?= Vista::escapar($solicitud['fecha_resolucion_solicitud']) ?></dd>
@@ -47,7 +47,7 @@ $cuentaVinculada = $datosVista['cuentaVinculada'];
             <?php endif; ?>
             <?php if ($cuentaVinculada !== null): ?>
                 <dt>Cuenta creada</dt>
-                <dd><?= Vista::escapar($cuentaVinculada['estado_cuenta_usuario']) ?> · rol <?= Vista::escapar($cuentaVinculada['rol_usuario']) ?></dd>
+                <dd><?= Vista::escapar(Etiquetas::estadoCuenta($cuentaVinculada['estado_cuenta_usuario'])) ?> · rol <?= Vista::escapar(Etiquetas::rol($cuentaVinculada['rol_usuario'])) ?></dd>
             <?php endif; ?>
         <?php endif; ?>
     </dl>

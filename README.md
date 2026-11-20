@@ -49,7 +49,7 @@ Un ADMINISTRADOR cambia el estado de cuentas USUARIO; solo el PRINCIPAL el de cu
 | Política de contraseñas nuevas | `PoliticaContrasenas` (usa `ListaBloqueoContrasenas` de la Fase II y además rechaza nombre, correo o matrícula) |
 | Correos sin servicio real | `ServicioCorreo` (modo `buzon_pruebas`: guarda los mensajes en `storage/correos/`; nunca finge un envío) |
 | Estados, roles, bitácora | `AdminUsuarioController` (`/admin/usuarios`, `/admin/roles` solo principal, `/admin/bitacora`) |
-| Pantallas A–I | `bienvenida`, `login`, `solicitar-acceso`, `solicitud-recibida`, `verificar-solicitud`, `solo-correo`, `nueva-contrasena`, `segundo-factor`, `configurar-segundo-factor`, `codigos-recuperacion`, `inicio`, `ayuda`, `aviso-privacidad`, `admin/*` |
+| Pantallas B–I | `login`, `solicitar-acceso`, `solicitud-recibida`, `verificar-solicitud`, `solo-correo`, `nueva-contrasena`, `segundo-factor`, `configurar-segundo-factor`, `codigos-recuperacion`, `inicio`, `ayuda`, `aviso-privacidad`, `admin/*` |
 | Herramientas de consola | `inicializar-administrador-principal.php` (ahora también crea la cuenta), `ver-buzon-pruebas.php`, `restablecer-segundo-factor.php` |
 
 Correspondencia con los nombres sugeridos en la sección 9.2: las vistas siguen en `app/views/` (no en
@@ -115,6 +115,25 @@ Detalle y respuesta de cada hallazgo en `docs/revision-codex.md`.
 | R-07 Envío fingido | Instrucciones condicionales ("si recibe un mensaje..."), aviso de modo de demostración y mensajes al administrador que dicen si quedó en el buzón, se entregó al servicio o falló | `solicitud-recibida.php`, `ServicioSolicitudAcceso`, `ServicioCorreo` | R07, H03 |
 | R-08 Reversión que reabre cuentas | La reversión 004 se detiene antes de borrar si hay cuentas restringidas utilizables; `004-preparar-reversion.sql` (con autorización) las bloquea y deja evidencia | `004-...-revertir.sql`, `004-preparar-reversion.sql` | R03b |
 
+### Diseño de las pantallas de acceso y textos (20/11/2026)
+
+- **Sin portada.** La dirección principal (`/`) lleva directo a iniciar sesión (o a `/inicio` si ya hay sesión).
+  Se eliminó `bienvenida.php`: en esta etapa lo importante es el acceso.
+- **Un solo diseño para todas las pantallas de acceso** (iniciar sesión, solicitar acceso, activar cuenta,
+  recuperar contraseña y verificación en dos pasos): fondo de playa al atardecer y una tarjeta de dos columnas
+  (identidad de la universidad a la izquierda y el formulario a la derecha). En celular la identidad pasa arriba
+  en una franja compacta. Las imágenes `public/img/fondo-acceso.svg` y `ola-panel.svg` son ilustraciones propias,
+  sin derechos de terceros.
+- **Estructura del código:** las vistas de acceso abren y cierran con `parciales/acceso-inicio.php` y
+  `parciales/acceso-fin.php`, así que la tarjeta no se repite en cada archivo. `Vista::usarDiseno()` elige el
+  diseño, `Vista::icono()` dibuja los íconos y `portal.css` quedó ordenado en 8 secciones numeradas.
+- **Textos:** trato de usted en todo el portal; "segundo factor" se cambió por "verificación en dos pasos";
+  el error inesperado ya no tutea ni dice "error interno"; las claves internas (`ADMINISTRADOR_PRINCIPAL`,
+  `SUSPENDIDA`...) se muestran como palabras comunes mediante `app/nucleo/Etiquetas.php`; "identificador
+  institucional" pasó a "número de personal", igual en el formulario y en los mensajes de error.
+- **Contraste:** texto blanco sobre la tarjeta con más de 7:1 y sobre el botón violeta con 5.5:1; foco visible
+  en dorado claro. Revisado en navegador a 1440, 1280 y 375 px de ancho (sin desplazamiento horizontal).
+  **No** se probó con lector de pantalla.
 ### Actualizar el servidor (`equipo_7`)
 
 1. **Respaldo**: phpMyAdmin → `equipo_7` → Exportar.

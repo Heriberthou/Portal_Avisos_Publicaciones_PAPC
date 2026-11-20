@@ -144,10 +144,10 @@ final class ServicioCorreo
         if ($enlace === null) {
             return false;
         }
-        return $this->enviar($correo, 'Configure su segundo factor del PAPC', <<<TEXTO
+        return $this->enviar($correo, 'Active la verificación en dos pasos de su cuenta del PAPC', <<<TEXTO
             Hola, {$nombre}:
 
-            Su cuenta del PAPC tiene funciones administrativas. Para usarlas debe configurar un segundo factor
+            Su cuenta del PAPC tiene funciones administrativas. Para usarlas debe activar la verificación en dos pasos
             (una aplicación de autenticación en su teléfono). Abra este enlace en el navegador donde iniciará sesión:
 
             {$enlace}

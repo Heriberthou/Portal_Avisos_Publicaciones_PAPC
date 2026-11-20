@@ -33,7 +33,7 @@ return static function (Enrutador $enrutador, array $dependencias): void {
     $adminUsuarios = $dependencias['adminUsuarioController'];
 
     // Pantalla A: bienvenida pública, ayuda y aviso de privacidad.
-    $enrutador->agregarRuta('GET', '/', [$portal, 'mostrarBienvenida'], Enrutador::ACCESO_PUBLICO);
+    $enrutador->agregarRuta('GET', '/', [$portal, 'irAlInicio'], Enrutador::ACCESO_PUBLICO);
     $enrutador->agregarRuta('GET', '/ayuda', [$portal, 'mostrarAyuda'], Enrutador::ACCESO_PUBLICO);
     $enrutador->agregarRuta('GET', '/aviso-privacidad', [$portal, 'mostrarAvisoPrivacidad'], Enrutador::ACCESO_PUBLICO);
 

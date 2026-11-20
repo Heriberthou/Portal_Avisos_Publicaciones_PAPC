@@ -84,7 +84,7 @@ final class SegundoFactorController
         }
         if ($this->servicioSegundoFactor->obtenerCuentaPendiente() === null) {
             $mensaje = $this->gestorSesion->obtenerTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO) !== null
-                ? 'Inicie sesión para continuar con la configuración de su segundo factor.'
+                ? 'Inicie sesión para continuar con la verificación en dos pasos.'
                 : self::MENSAJE_SIN_PENDIENTE;
             return $this->redirigirConMensaje('/iniciar-sesion', 'aviso', $mensaje);
         }
@@ -181,7 +181,7 @@ final class SegundoFactorController
     private function vistaVerificacion(?string $mensajeError, int $codigoEstado): Respuesta
     {
         return Respuesta::vista('segundo-factor', [
-            'tituloPagina' => 'Verificar segundo factor',
+            'tituloPagina' => 'Verificación en dos pasos',
             'mensajes'     => $this->gestorSesion->extraerMensajesFlash(),
             'mensajeError' => $mensajeError,
         ], $codigoEstado);
@@ -197,7 +197,7 @@ final class SegundoFactorController
     private function vistaEnlacePendiente(?string $mensaje, int $codigoEstado): Respuesta
     {
         return Respuesta::vista('enlace-segundo-factor', [
-            'tituloPagina' => 'Configurar segundo factor',
+            'tituloPagina' => 'Activar la verificación en dos pasos',
             'mensajes'     => $this->gestorSesion->extraerMensajesFlash(),
             'mensaje'      => $mensaje,
         ], $codigoEstado);
@@ -212,7 +212,7 @@ final class SegundoFactorController
     private function vistaConfiguracion(array $configuracion, ?string $mensajeError, int $codigoEstado): Respuesta
     {
         return Respuesta::vista('configurar-segundo-factor', [
-            'tituloPagina'      => 'Configurar segundo factor',
+            'tituloPagina'      => 'Activar la verificación en dos pasos',
             'mensajes'          => $this->gestorSesion->extraerMensajesFlash(),
             'secretoFormateado' => SegundoFactorTotp::formatearSecreto($configuracion['secreto']),
             'uriAprovisionamiento' => $configuracion['uri'],

@@ -68,7 +68,7 @@ final class AdminUsuarioController
     public function listarRoles(?array $usuarioActual, array $datosFormulario): Respuesta
     {
         return Respuesta::vista('admin/roles', [
-            'tituloPagina'     => 'Roles y segundo factor',
+            'tituloPagina'     => 'Roles y verificación en dos pasos',
             'usuarioActual'    => $usuarioActual,
             'mensajes'         => $this->gestorSesion->extraerMensajesFlash(),
             'listaUsuarios'    => $this->usuarioModel->listarUsuarios(),
