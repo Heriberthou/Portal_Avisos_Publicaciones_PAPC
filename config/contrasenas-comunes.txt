@@ -112,3 +112,57 @@ contrasenasupersegura
 unacontrasenamuysegura
 puertoescondido
 inteligenciaartificial
+
+# --- Palabras base (20/11/2026, revisión de evasiones) ---
+# Se comparan con las variantes de la contraseña: sin relleno de signos o espacios,
+# sin repeticiones seguidas, con sustituciones (P@ssw0rd) y sin números al principio
+# o al final (Password2024 -> password). Por eso pueden ser cortas.
+password
+passw0rd
+contraseña
+contrasena
+micontraseña
+clave
+qwerty
+qwertyuiop
+asdfgh
+zxcvbn
+admin
+administrador
+administrator
+root
+usuario
+user
+login
+welcome
+bienvenido
+letmein
+iloveyou
+teamo
+teamomucho
+holamundo
+hola
+secreto
+secret
+master
+dragon
+monkey
+sunshine
+princess
+princesa
+football
+futbol
+baseball
+superman
+batman
+pokemon
+starwars
+abc
+abcd
+umar
+papc
+universidad
+universidaddelmar
+puertoescondido
+oaxaca
+mexico

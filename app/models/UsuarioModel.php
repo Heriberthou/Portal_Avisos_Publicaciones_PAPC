@@ -258,6 +258,27 @@ final class UsuarioModel
     }
 
     /**
+     * Deja una cuenta POR ACTIVAR y sin contraseña: la persona debe crear una
+     * nueva con el enlace de activación (política vigente). Se usa al validar
+     * una cuenta del registro anterior, cuya contraseña se creó con reglas
+     * más débiles. Cierra sus sesiones.
+     *
+     * @param int $idUsuario Cuenta.
+     * @param string $estadoAnterior Estado esperado (transición atómica).
+     * @return bool true si se aplicó.
+     */
+    public function convertirEnInvitadaSinContrasena(int $idUsuario, string $estadoAnterior): bool
+    {
+        $sentencia = $this->conexion->prepare(
+            "UPDATE usuario SET estado_cuenta_usuario = 'INVITADA', hash_contrasena_usuario = NULL,
+                 version_sesion_usuario = version_sesion_usuario + 1
+             WHERE id_usuario = :idUsuario AND estado_cuenta_usuario = :estadoAnterior"
+        );
+        $sentencia->execute(['idUsuario' => $idUsuario, 'estadoAnterior' => $estadoAnterior]);
+        return $sentencia->rowCount() === 1;
+    }
+
+    /**
      * Bloquea la fila de la cuenta hasta el fin de la transacción.
      *
      * @param int $idUsuario Cuenta.

@@ -731,7 +731,8 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos): void 
         MarcoPruebas::afirmar($fila['fecha_validacion_institucional_usuario'] !== null, 'Se registró la validación');
         MarcoPruebas::afirmarIgual((int) $paula['id_usuario'], (int) $fila['id_usuario_autorizador'], 'Y quién la autorizó');
         MarcoPruebas::afirmarIgual(1, $baseDatos->contarEventos('VALIDACION_CUENTA_HEREDADA'), 'Auditado');
-        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('hugo@ejemplo.mx'), 'Ya validada, entra');
+        // La contraseña del registro anterior no se conserva: crea una nueva con el enlace (prueba R10).
+        MarcoPruebas::afirmarIgual('INVITADA', $fila['estado_cuenta_usuario'], 'Ya validada, queda por activar con una contraseña nueva');
     });
 
     $marco->probar('R03b', 'R-03/R-08: migración 005, su reversión y la precondición ejecutable de la reversión 004', static function () use ($baseDatos): void {
@@ -1001,6 +1002,49 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos): void 
             $rechazado = true;
         }
         MarcoPruebas::afirmar($rechazado, 'consumirToken() exige una transacción abierta');
+    });
+
+    $marco->probar('R10', 'Política: validar una cuenta del registro anterior no conserva su contraseña antigua; debe crear una nueva con la política vigente (web y consola)', static function () use ($baseDatos, $iniciarComo, $actor, $servicioAdministracion, $contrasenaPrincipal, $buzon): void {
+        // Antes de la lista de bloqueo (commit 4c88521) el registro aceptaba esta secuencia.
+        $contrasenaAntigua = '123456789012345';
+        MarcoPruebas::afirmar(PoliticaContrasenas::validarNuevaContrasena($contrasenaAntigua) !== null, 'La política vigente no permitiría crearla');
+        $conexion = $baseDatos->obtenerConexionAdministrativa();
+        $insertarHeredada = static function (string $correo, string $nombre) use ($conexion, $contrasenaAntigua): int {
+            // Estado que deja la migración 005: SUSPENDIDA y sin validación institucional.
+            $conexion->prepare("INSERT INTO usuario (nombres_usuario, apellido_paterno_usuario, correo_electronico_usuario, hash_contrasena_usuario, estado_cuenta_usuario)
+                VALUES (?, 'Heredado', ?, ?, 'SUSPENDIDA')")->execute([$nombre, $correo, GestorContrasenas::generarHash($contrasenaAntigua)]);
+            return (int) $conexion->lastInsertId();
+        };
+
+        // 1. Web: "Validar y reactivar".
+        $idLalo = $insertarHeredada('lalo@ejemplo.mx', 'Lalo');
+        $resultado = $servicioAdministracion->cambiarEstadoCuenta($actor('paula@ejemplo.mx'), $idLalo, 'ACTIVA', $contrasenaPrincipal);
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('lalo@ejemplo.mx', $contrasenaAntigua), 'La contraseña antigua ya no sirve');
+        MarcoPruebas::afirmar($resultado['exito'] && str_contains($resultado['mensaje'], 'contraseña nueva'), 'Validada, con aviso de contraseña nueva: ' . $resultado['mensaje']);
+        $fila = $baseDatos->obtenerFilaUsuario('lalo@ejemplo.mx');
+        MarcoPruebas::afirmarIgual('INVITADA', $fila['estado_cuenta_usuario'], 'Queda por activar');
+        MarcoPruebas::afirmar($fila['fecha_validacion_institucional_usuario'] !== null, 'Con la validación registrada');
+        $token = (string) $buzon->ultimoToken('lalo@ejemplo.mx', '/activar-cuenta');
+        MarcoPruebas::afirmar(GeneradorTokens::esFormatoValido($token), 'Recibe un enlace de activación');
+        $dependencias = Aplicacion::construirDependencias(obtenerConexionBaseDatos());
+        /** @var ServicioCredenciales $credenciales */
+        $credenciales = $dependencias['servicioCredenciales'];
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_CONTRASENA_RECHAZADA, $credenciales->activarCuenta($token, $contrasenaAntigua)['resultado'], 'No puede volver a poner la antigua');
+        MarcoPruebas::afirmarIgual(ServicioCredenciales::RESULTADO_EXITO, $credenciales->activarCuenta($token, 'el pescador vuelve con la red llena')['resultado'], 'Crea una nueva');
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('lalo@ejemplo.mx', 'el pescador vuelve con la red llena'), 'Entra con la nueva');
+
+        // 2. Consola: habilitar como principal una cuenta del registro anterior.
+        $idLuis = $insertarHeredada('luis@ejemplo.mx', 'Luis');
+        $baseDatos->fijarRol('paula@ejemplo.mx', UsuarioModel::ROL_USUARIO);
+        try {
+            $consola = $servicioAdministracion->inicializarAdministradorPrincipal('luis@ejemplo.mx');
+            MarcoPruebas::afirmar($consola['exito'] && GeneradorTokens::esFormatoValido((string) $consola['tokenActivacion']), 'La consola entrega un enlace de activación');
+            MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_CREDENCIALES_INVALIDAS, $iniciarComo('luis@ejemplo.mx', $contrasenaAntigua), 'Consola: la contraseña antigua ya no sirve');
+            MarcoPruebas::afirmarIgual('INVITADA', $baseDatos->obtenerFilaUsuario('luis@ejemplo.mx')['estado_cuenta_usuario'], 'Consola: queda por activar');
+        } finally {
+            $baseDatos->fijarRol('luis@ejemplo.mx', UsuarioModel::ROL_USUARIO);
+            $baseDatos->fijarRol('paula@ejemplo.mx', UsuarioModel::ROL_ADMINISTRADOR_PRINCIPAL);
+        }
     });
 
     $marco->probar('R07', 'R-07/AC-26: si el correo falla, la aprobación lo dice y se puede reenviar', static function () use ($baseDatos, $buzon, $servicioSolicitud, $actor, $origenNuevo, $datosSolicitud): void {

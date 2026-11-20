@@ -168,6 +168,10 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
             $rechazo = $cliente->enviar('/activar-cuenta', ['token_csrf' => $token, 'contrasena' => '123456789012345']);
             MarcoPruebas::afirmarIgual(422, $rechazo['codigo'], 'Contraseña predecible rechazada');
             MarcoPruebas::afirmar(str_contains($rechazo['cuerpo'], 'muy común o fácil de adivinar'), 'Mensaje claro sin revelar la lista');
+            // Regresión (reproducción del 20/11/2026, sin JavaScript): antes se aceptaban.
+            foreach (['hola!!!!!!!!!!!', 'Password12345678', '1234567891011121314', 'abcdefghijklmn1'] as $evasion) {
+                MarcoPruebas::afirmarIgual(422, $cliente->enviar('/activar-cuenta', ['token_csrf' => $token, 'contrasena' => $evasion])['codigo'], "Activación rechaza: {$evasion}");
+            }
 
             $activacion = $cliente->enviar('/activar-cuenta', ['token_csrf' => $token, 'contrasena' => $contrasenaPrincipal]);
             MarcoPruebas::afirmarIgual(303, $activacion['codigo'], 'Activada');
@@ -372,7 +376,15 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
             $cliente = $nuevoCliente();
             $formulario = $abrirEnlace($cliente, '/restablecer-contrasena', (string) $buzon->ultimoToken('ana@http.mx', '/restablecer-contrasena'));
             $contrasenaNueva = 'el viento del sur trae lluvia fresca';
-            $resultado = $cliente->enviar('/restablecer-contrasena', ['token_csrf' => ClienteHttp::extraerTokenCsrf($formulario['cuerpo']), 'contrasena' => $contrasenaNueva]);
+            $tokenFormulario = ClienteHttp::extraerTokenCsrf($formulario['cuerpo']);
+            // Regresión (reproducción del 20/11/2026, sin JavaScript): antes se aceptaban.
+            foreach (['hola           ', 'P@ssw0rd2024!!!!', '246810121416182', '1qaz2wsx3edc4rf', 'umar2026umar202', '１２３４５６７８９０１２３４５'] as $evasion) {
+                $rechazo = $cliente->enviar('/restablecer-contrasena', ['token_csrf' => $tokenFormulario, 'contrasena' => $evasion]);
+                MarcoPruebas::afirmarIgual(422, $rechazo['codigo'], "Restablecimiento rechaza: {$evasion}");
+            }
+            // R-10 (Codex): rechazar no cambia la contraseña ni gasta el enlace.
+            MarcoPruebas::afirmarIgual(303, $iniciarSesionPorHttp('ana@http.mx', $contrasenaComun)[1]['codigo'], 'Tras los rechazos, la contraseña anterior sigue igual');
+            $resultado = $cliente->enviar('/restablecer-contrasena', ['token_csrf' => $tokenFormulario, 'contrasena' => $contrasenaNueva]);
             MarcoPruebas::afirmarIgual('/iniciar-sesion', $obtenerUbicacion($resultado), 'Restablecida; exige login');
             MarcoPruebas::afirmarIgual(303, $clienteAbierto->obtener('/inicio')['codigo'], 'La sesión que estaba abierta se cerró');
             MarcoPruebas::afirmarIgual(401, $iniciarSesionPorHttp('ana@http.mx', $contrasenaComun)[1]['codigo'], 'La contraseña anterior ya no sirve');

@@ -1,0 +1,104 @@
+PAPC | Evidencia: política de contraseñas por HTTP, sin JavaScript (20/11/2026)
+Script: tests/reproducir-politica-contrasenas.php (base local desechable, cuenta ficticia, correo al buzón de pruebas).
+Alcance: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 local, php -S. NO es el servidor XAMPP ni su PHP 8.2/MariaDB 10.4.
+Los casos "esperado: rechazo" son valores esperados o predecibles según el criterio documentado en README
+("Revisión de la política de contraseñas"); no son una lista oficial de NIST.
+
+===== ANTES de la corrección (código del commit 0254db4) =====
+PAPC | Reproducción de la política de contraseñas por HTTP, sin JavaScript (2026-11-20 21:44)
+PHP 8.3.30 · base desechable papc_db_pruebas · servidor php -S 127.0.0.1:8095 · cuenta ficticia ana.ficticia@ejemplo.invalid
+
+Caso Flujo            Descripción                                 Esperado   Obtenido   Detalle
+B1   activación      secuencia numérica                          rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B2   activación      un solo carácter                            rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B3   activación      bloque repetido                              rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B4   activación      en la lista                                  rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B5   activación      menos de 15 (sin minlength del navegador)    rechazo    rechazo    HTTP 422 · "La contraseña debe tener al menos 15 caracteres."
+E1   activación      palabra corta + relleno de signos            rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+B1   restablecimiento secuencia numérica                          rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B2   restablecimiento un solo carácter                            rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B3   restablecimiento bloque repetido                              rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B4   restablecimiento en la lista                                  rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B5   restablecimiento menos de 15 (sin minlength del navegador)    rechazo    rechazo    HTTP 422 · "La contraseña debe tener al menos 15 caracteres."
+E1   restablecimiento palabra corta + relleno de signos            rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E2   restablecimiento palabra corta + relleno de espacios          rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E3   restablecimiento palabra común + signos                      rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E4   restablecimiento palabra común + secuencia                   rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E5   restablecimiento palabra común con sustituciones + año      rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E6   restablecimiento palabra común en español + secuencia       rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E7   restablecimiento secuencia que reinicia                       rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E8   restablecimiento conteo 1..14                                 rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E9   restablecimiento números pares                               rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E10  restablecimiento progresión de 100 en 100                    rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E11  restablecimiento años consecutivos                           rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E12  restablecimiento filas del teclado                            rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E13  restablecimiento columnas del teclado                         rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E14  restablecimiento repeticiones de una secuencia                rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E15  restablecimiento repeticiones de una secuencia numérica      rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E16  restablecimiento secuencia + 1 carácter                      rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E17  restablecimiento bloque repetido truncado                     rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E18  restablecimiento palabra + 11 espacios de ancho cero          rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+E19  restablecimiento secuencia con dígitos de ancho completo     rechazo    aceptación <<< HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+C1   restablecimiento frase de control                             aceptación aceptación HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+C2   restablecimiento frase de control                             aceptación aceptación HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+
+Discrepancias con lo esperado: 19 de 32 comprobaciones.
+
+===== DESPUÉS de la corrección =====
+PAPC | Reproducción de la política de contraseñas por HTTP, sin JavaScript (2026-11-20 21:55)
+PHP 8.3.30 · base desechable papc_db_pruebas · servidor php -S 127.0.0.1:8095 · cuenta ficticia ana.ficticia@ejemplo.invalid
+
+Caso Flujo            Descripción                                 Esperado   Obtenido   Detalle
+B1   activación      secuencia numérica                          rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B2   activación      un solo carácter                            rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+B3   activación      bloque repetido                              rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B4   activación      en la lista                                  rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B5   activación      menos de 15 (sin minlength del navegador)    rechazo    rechazo    HTTP 422 · "La contraseña debe tener al menos 15 caracteres."
+E1   activación      palabra corta + relleno de signos            rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E2   activación      palabra corta + relleno de espacios          rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E3   activación      palabra común + signos                      rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E4   activación      palabra común + secuencia                   rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E5   activación      palabra común con sustituciones + año      rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E6   activación      palabra común en español + secuencia       rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E7   activación      secuencia que reinicia                       rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E8   activación      conteo 1..14                                 rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E9   activación      números pares                               rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E10  activación      progresión de 100 en 100                    rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E11  activación      años consecutivos                           rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E12  activación      filas del teclado                            rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E13  activación      columnas del teclado                         rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E14  activación      repeticiones de una secuencia                rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E15  activación      repeticiones de una secuencia numérica      rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E16  activación      secuencia + 1 carácter                      rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E17  activación      bloque repetido truncado                     rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E18  activación      palabra + 11 espacios de ancho cero          rechazo    rechazo    HTTP 422 · "La contraseña debe tener al menos 15 caracteres."
+E19  activación      secuencia con dígitos de ancho completo     rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+C1   activación      frase de control                             aceptación aceptación HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+B1   restablecimiento secuencia numérica                          rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B2   restablecimiento un solo carácter                            rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+B3   restablecimiento bloque repetido                              rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B4   restablecimiento en la lista                                  rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+B5   restablecimiento menos de 15 (sin minlength del navegador)    rechazo    rechazo    HTTP 422 · "La contraseña debe tener al menos 15 caracteres."
+E1   restablecimiento palabra corta + relleno de signos            rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E2   restablecimiento palabra corta + relleno de espacios          rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E3   restablecimiento palabra común + signos                      rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E4   restablecimiento palabra común + secuencia                   rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E5   restablecimiento palabra común con sustituciones + año      rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E6   restablecimiento palabra común en español + secuencia       rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E7   restablecimiento secuencia que reinicia                       rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E8   restablecimiento conteo 1..14                                 rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E9   restablecimiento números pares                               rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E10  restablecimiento progresión de 100 en 100                    rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E11  restablecimiento años consecutivos                           rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E12  restablecimiento filas del teclado                            rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E13  restablecimiento columnas del teclado                         rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E14  restablecimiento repeticiones de una secuencia                rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E15  restablecimiento repeticiones de una secuencia numérica      rechazo    rechazo    HTTP 422 · "Use al menos 8 letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan."
+E16  restablecimiento secuencia + 1 carácter                      rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E17  restablecimiento bloque repetido truncado                     rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+E18  restablecimiento palabra + 11 espacios de ancho cero          rechazo    rechazo    HTTP 422 · "La contraseña debe tener al menos 15 caracteres."
+E19  restablecimiento secuencia con dígitos de ancho completo     rechazo    rechazo    HTTP 422 · "Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra."
+C1   restablecimiento frase de control                             aceptación aceptación HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+C2   restablecimiento frase de control                             aceptación aceptación HTTP 303 → /iniciar-sesion; inicio de sesión con esa contraseña: SÍ
+
+Discrepancias con lo esperado: 0 de 51 comprobaciones.

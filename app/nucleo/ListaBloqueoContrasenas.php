@@ -4,29 +4,45 @@ declare(strict_types=1);
 
 /**
  * Rechaza contraseñas comunes, filtradas o fáciles de adivinar aunque
- * cumplan la longitud mínima (NIST SP 800-63B-4: "blocklist").
+ * cumplan la longitud mínima (NIST SP 800-63B-4, 3.1.1.2: comparar contra
+ * una lista de valores "comúnmente usados, esperados o comprometidos").
  *
- * Se compara la contraseña COMPLETA (normalizada), no fragmentos: una frase
- * larga que contenga la palabra "password" sigue siendo válida. Además de la
- * lista, se detectan por patrón:
- *   - secuencias (123456789012345, abcdefghijklmno, 987654321098765),
- *   - repeticiones de un bloque (passwordpassword, abcabcabcabcabc),
- *   - muy pocos caracteres distintos (aaaaaaaaaaaaaaa, 121212121212121).
+ * Cómo se evalúa (solo para comparar; la contraseña real nunca se altera):
+ *   1. Se normaliza: forma Unicode compatible (NFKC: "１２３" = "123"), sin
+ *      caracteres invisibles, minúsculas, sin acentos y solo letras y dígitos.
+ *   2. Contenido mínimo: sin contar espacios, signos ni repeticiones seguidas
+ *      ("hola!!!!!!!!!!!", "hola           "), deben quedar al menos
+ *      MINIMO_CONTENIDO letras o dígitos.
+ *   3. Se revisan variantes de la misma contraseña: tal cual, sin repeticiones
+ *      seguidas, con sustituciones típicas (P@ssw0rd = password) y sin los
+ *      números del principio o del final (Password2024 = password). Una
+ *      variante débil vuelve débil a la contraseña.
+ *   4. Cada variante se compara COMPLETA con la lista (no por fragmentos:
+ *      una frase que contenga "password" en medio sigue siendo válida) y con
+ *      los patrones de PatronesContrasena.
  *
- * La comprobación se hace solo en el servidor; el navegador nunca recibe
- * la lista.
+ * Solo en el servidor; el navegador nunca recibe la lista.
  */
 final class ListaBloqueoContrasenas
 {
     /** Archivo de la lista (fuera de public/, protegido por config/.htaccess). */
     private const RUTA_LISTA = '/config/contrasenas-comunes.txt';
 
-    /** Mínimo de caracteres distintos que debe tener una contraseña. */
-    private const MINIMO_CARACTERES_DISTINTOS = 4;
+    /**
+     * Mínimo de letras o dígitos (sin repeticiones seguidas). Decisión del
+     * proyecto, no un requisito de NIST: evita que el relleno con espacios o
+     * signos complete la longitud de una palabra corta.
+     */
+    public const MINIMO_CONTENIDO = 8;
 
     /** Equivalencias para comparar sin acentos ("contraseña" = "contrasena"). */
     private const EQUIVALENCIAS_ACENTOS = [
         'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n',
+    ];
+
+    /** Sustituciones habituales de letras por símbolos o dígitos. */
+    private const SUSTITUCIONES = [
+        '@' => 'a', '4' => 'a', '$' => 's', '5' => 's', '0' => 'o', '1' => 'i', '!' => 'i', '3' => 'e', '7' => 't', '€' => 'e',
     ];
 
     /** @var array<string, true>|null Lista normalizada, cargada una vez por solicitud. */
@@ -36,29 +52,115 @@ final class ListaBloqueoContrasenas
      * Indica si la contraseña debe rechazarse por común o predecible.
      *
      * @param string $contrasena Contraseña tal como la escribió el usuario.
-     * @return bool true si está en la lista o sigue un patrón trivial.
+     * @return bool true si está en la lista o sigue un patrón predecible.
      */
     public static function esContrasenaDebil(string $contrasena): bool
     {
-        $contrasenaNormalizada = self::normalizar($contrasena);
-
-        return isset(self::obtenerLista()[$contrasenaNormalizada])
-            || self::tienePocosCaracteresDistintos($contrasenaNormalizada)
-            || self::esSecuencia($contrasenaNormalizada)
-            || self::esBloqueRepetido($contrasenaNormalizada);
+        if (self::tieneContenidoInsuficiente($contrasena)) {
+            return true;
+        }
+        foreach (self::obtenerVariantes($contrasena) as $variante) {
+            if (isset(self::obtenerLista()[$variante]) || PatronesContrasena::esPredecible($variante)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
-     * Minúsculas, sin acentos y sin espacios ni signos. Solo se usa para
-     * comparar: la contraseña real nunca se modifica.
+     * true si, quitando espacios, signos y repeticiones seguidas, quedan
+     * menos de MINIMO_CONTENIDO letras o dígitos.
+     *
+     * @param string $contrasena Contraseña original.
+     * @return bool true si el relleno es lo que completa la longitud.
+     */
+    public static function tieneContenidoInsuficiente(string $contrasena): bool
+    {
+        return mb_strlen(self::colapsarRepeticiones(self::normalizar($contrasena)), 'UTF-8') < self::MINIMO_CONTENIDO;
+    }
+
+    /**
+     * Forma compatible, minúsculas, sin acentos y solo letras y dígitos.
      *
      * @param string $texto Texto original.
-     * @return string Texto normalizado (solo letras y dígitos).
+     * @return string Texto normalizado.
      */
     public static function normalizar(string $texto): string
     {
-        $textoMinusculas = strtr(mb_strtolower($texto, 'UTF-8'), self::EQUIVALENCIAS_ACENTOS);
+        $textoMinusculas = strtr(mb_strtolower(self::formaCompatible($texto), 'UTF-8'), self::EQUIVALENCIAS_ACENTOS);
         return (string) preg_replace('/[^\p{L}\p{N}]+/u', '', $textoMinusculas);
+    }
+
+    /**
+     * Unicode NFKC (dígitos y letras de ancho completo, ligaduras) y sin
+     * caracteres invisibles de formato (espacio de ancho cero, etc.). Si la
+     * extensión intl no está disponible, se convierten al menos los
+     * caracteres de ancho completo.
+     *
+     * @param string $texto Texto original.
+     * @return string Texto en forma compatible.
+     */
+    public static function formaCompatible(string $texto): string
+    {
+        if (class_exists(Normalizer::class)) {
+            $normalizado = Normalizer::normalize($texto, Normalizer::FORM_KC);
+            $texto = is_string($normalizado) ? $normalizado : $texto;
+        } else {
+            $texto = (string) preg_replace_callback(
+                '/[\x{FF01}-\x{FF5E}]/u',
+                static fn (array $coincidencia): string => mb_chr(mb_ord($coincidencia[0], 'UTF-8') - 0xFEE0, 'UTF-8'),
+                $texto
+            );
+        }
+        return (string) preg_replace('/\p{Cf}+/u', '', $texto);
+    }
+
+    /**
+     * Longitud que se ve: código por código, sin contar los caracteres
+     * invisibles de formato (NIST cuenta cada punto de código como un
+     * carácter; un espacio de ancho cero no aporta nada visible).
+     *
+     * @param string $contrasena Contraseña original.
+     * @return int Caracteres.
+     */
+    public static function contarCaracteres(string $contrasena): int
+    {
+        return mb_strlen((string) preg_replace('/\p{Cf}+/u', '', $contrasena), 'UTF-8');
+    }
+
+    /**
+     * Variantes que se comparan con la lista y los patrones.
+     *
+     * @param string $contrasena Contraseña original.
+     * @return list<string> Variantes normalizadas, sin repetir ni vacías.
+     */
+    private static function obtenerVariantes(string $contrasena): array
+    {
+        $minusculas = mb_strtolower(self::formaCompatible($contrasena), 'UTF-8');
+        // Núcleo: sin lo que no es letra al principio y al final ("2024P@ssw0rd!!" -> "p@ssw0rd").
+        $nucleo = (string) preg_replace('/^[^\p{L}]+|[^\p{L}]+$/u', '', $minusculas);
+
+        $normalizada = self::normalizar($contrasena);
+        $variantes = [
+            $normalizada,
+            self::colapsarRepeticiones($normalizada),
+            self::normalizar(strtr($minusculas, self::SUSTITUCIONES)),
+            self::normalizar($nucleo),
+            self::normalizar(strtr($nucleo, self::SUSTITUCIONES)),
+        ];
+        $variantes[] = self::colapsarRepeticiones(end($variantes));
+        return array_values(array_unique(array_filter($variantes, static fn (string $variante): bool => $variante !== '')));
+    }
+
+    /**
+     * "paaasssword" -> "pasword": una racha del mismo carácter cuenta como uno.
+     *
+     * @param string $texto Texto normalizado.
+     * @return string Texto sin repeticiones seguidas.
+     */
+    private static function colapsarRepeticiones(string $texto): string
+    {
+        return (string) preg_replace('/(.)\1+/u', '$1', $texto);
     }
 
     /**
@@ -81,85 +183,10 @@ final class ListaBloqueoContrasenas
             if ($linea === '' || str_starts_with($linea, '#')) {
                 continue;
             }
-            self::$listaNormalizada[self::normalizar($linea)] = true;
+            $entrada = self::normalizar($linea);
+            self::$listaNormalizada[$entrada] = true;
+            self::$listaNormalizada[self::colapsarRepeticiones($entrada)] = true;
         }
         return self::$listaNormalizada;
-    }
-
-    /**
-     * @param string $texto Texto normalizado.
-     * @return bool true si usa menos de MINIMO_CARACTERES_DISTINTOS símbolos.
-     */
-    private static function tienePocosCaracteresDistintos(string $texto): bool
-    {
-        $caracteres = mb_str_split($texto, 1, 'UTF-8');
-        return count(array_unique($caracteres)) < self::MINIMO_CARACTERES_DISTINTOS;
-    }
-
-    /**
-     * Detecta secuencias ascendentes o descendentes de dígitos (con vuelta
-     * 9→0) o de letras consecutivas del alfabeto.
-     *
-     * @param string $texto Texto normalizado.
-     * @return bool true si todo el texto es una sola secuencia.
-     */
-    private static function esSecuencia(string $texto): bool
-    {
-        $caracteres = mb_str_split($texto, 1, 'UTF-8');
-        if (count($caracteres) < 3) {
-            return false;
-        }
-        foreach ([1, -1] as $direccion) {
-            $esSecuencia = true;
-            for ($indice = 1, $total = count($caracteres); $indice < $total; $indice++) {
-                if (!self::sonConsecutivos($caracteres[$indice - 1], $caracteres[$indice], $direccion)) {
-                    $esSecuencia = false;
-                    break;
-                }
-            }
-            if ($esSecuencia) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * @param string $anterior Carácter anterior.
-     * @param string $siguiente Carácter siguiente.
-     * @param int $direccion 1 ascendente, -1 descendente.
-     * @return bool true si $siguiente sigue a $anterior en esa dirección.
-     */
-    private static function sonConsecutivos(string $anterior, string $siguiente, int $direccion): bool
-    {
-        if (ctype_digit($anterior) && ctype_digit($siguiente)) {
-            return ((int) $siguiente - (int) $anterior + 10) % 10 === ($direccion + 10) % 10;
-        }
-        if (preg_match('/^[a-z]$/', $anterior) === 1 && preg_match('/^[a-z]$/', $siguiente) === 1) {
-            return ord($siguiente) - ord($anterior) === $direccion;
-        }
-        return false;
-    }
-
-    /**
-     * Detecta un bloque repetido de principio a fin ("holaholahola").
-     *
-     * @param string $texto Texto normalizado.
-     * @return bool true si el texto es un bloque repetido 2 o más veces.
-     */
-    private static function esBloqueRepetido(string $texto): bool
-    {
-        $caracteres = mb_str_split($texto, 1, 'UTF-8');
-        $total = count($caracteres);
-        for ($longitudBloque = 1; $longitudBloque <= intdiv($total, 2); $longitudBloque++) {
-            if ($total % $longitudBloque !== 0) {
-                continue;
-            }
-            $bloque = implode('', array_slice($caracteres, 0, $longitudBloque));
-            if (str_repeat($bloque, intdiv($total, $longitudBloque)) === $texto) {
-                return true;
-            }
-        }
-        return false;
     }
 }

@@ -178,11 +178,12 @@ return static function (MarcoPruebas $marco): void {
             '123456789012345', '987654321098765', 'abcdefghijklmnopq', 'aaaaaaaaaaaaaaa',
             '121212121212121', 'passwordpassword', 'Contraseña Segura 123', 'contrasenasegura123',
             'Universidad del Mar 2026', 'UMAR Puerto Escondido', 'holaholaholahola', 'qwertyuiopasdfghjkl',
-            '!!!!!!!!!!!!!!!!', str_repeat('xk7 ', 32), 'qwertyuiopasdfg', 'inteligencia artificial',
+            str_repeat('xk7 ', 32), 'qwertyuiopasdfg', 'inteligencia artificial',
         ];
         foreach ($contrasenasDebiles as $contrasenaDebil) {
             MarcoPruebas::afirmar(ListaBloqueoContrasenas::esContrasenaDebil($contrasenaDebil), "Debe rechazarse: {$contrasenaDebil}");
-            MarcoPruebas::afirmarIgual(PoliticaContrasenas::MENSAJE_BLOQUEADA, PoliticaContrasenas::validarNuevaContrasena($contrasenaDebil), "Política: {$contrasenaDebil}");
+            // Se rechaza con el mensaje de lista o, si casi todo es repetición, con el de poco contenido (U07b).
+            MarcoPruebas::afirmar(PoliticaContrasenas::validarNuevaContrasena($contrasenaDebil) !== null, "Política: {$contrasenaDebil}");
         }
         $contrasenasValidas = [
             'una frase de paso bastante larga', 'mi password favorito es el mar azul',
@@ -194,6 +195,50 @@ return static function (MarcoPruebas $marco): void {
         MarcoPruebas::afirmarIgual('contrasenasegura123', ListaBloqueoContrasenas::normalizar('Contraseña Segura-123'), 'Normalización solo para comparar');
         MarcoPruebas::afirmar(PoliticaContrasenas::validarNuevaContrasena(str_repeat('a', 14)) !== null, '14 caracteres se rechaza');
         MarcoPruebas::afirmar(PoliticaContrasenas::validarNuevaContrasena(str_repeat('ab3 ', 33)) !== null, '132 caracteres se rechaza');
+    });
+
+    $marco->probar('U07b', 'Política: relleno, variantes y patrones predecibles que antes se aceptaban (reproducción del 20/11/2026) se rechazan; las frases siguen aceptándose', static function (): void {
+        // Contenido insuficiente: el relleno completaba la longitud mínima.
+        $mensajePocoContenido = sprintf(PoliticaContrasenas::MENSAJE_POCO_CONTENIDO, ListaBloqueoContrasenas::MINIMO_CONTENIDO);
+        foreach (['hola!!!!!!!!!!!', 'hola           ', '!!!!!!!!!!!!!!!!', 'Password!!!!!!!', 'aaaa....bbbb....cc', 'aaaabbbbccccdddd', '111122223333444'] as $contrasena) {
+            MarcoPruebas::afirmarIgual($mensajePocoContenido, PoliticaContrasenas::validarNuevaContrasena($contrasena), 'Poco contenido: ' . json_encode($contrasena, JSON_UNESCAPED_UNICODE));
+        }
+        // Caracteres invisibles: no cuentan para la longitud.
+        $conInvisibles = 'hola' . str_repeat("\u{200B}", 11);
+        MarcoPruebas::afirmarIgual(4, ListaBloqueoContrasenas::contarCaracteres($conInvisibles), 'Los espacios de ancho cero no cuentan');
+        MarcoPruebas::afirmar(PoliticaContrasenas::validarNuevaContrasena($conInvisibles) !== null, 'Palabra + invisibles se rechaza');
+
+        // Variantes y patrones (casos E4..E19 de tests/reproducir-politica-contrasenas.php).
+        $predecibles = [
+            'Password12345678', 'P@ssw0rd2024!!!!', '2024P@ssw0rd!!!!!', 'Contraseña12345!', 'qwerty2026!!!!!!',
+            '123456789123456', '1234567891011121314', '246810121416182', '100200300400500', '2024202520262027',
+            '1qaz2wsx3edc4rf', 'abcdefghijklmn1', 'umar2026umar202',
+            '１２３４５６７８９０１２３４５', '98765432109876543', 'zyxwvutsrqponmlk', '1234554321123455',
+            // Casos de Codex (R-10 en docs/revision-codex.md).
+            '1234567891234567', '1234567890123456A', '0123456789012345', '2468246824682468',
+        ];
+        foreach ($predecibles as $contrasena) {
+            MarcoPruebas::afirmarIgual(PoliticaContrasenas::MENSAJE_BLOQUEADA, PoliticaContrasenas::validarNuevaContrasena($contrasena), 'Predecible: ' . $contrasena);
+        }
+
+        // Controles: frases y cadenas no predecibles (incluidos otros alfabetos y números al final).
+        $aceptables = [
+            'las olas de puerto escondido', 'mi gato come atún los martes', 'casa grande casa azul',
+            'Tengo 3 perros y 2 gatos', 'mi password favorita es larguísima', '2019 fue el año que conocí a mi esposa',
+            'correr 5 km cada mañana me relaja', 'ventana azul junto al mar 1987', 'x7Y9!kq2#Lm4@Pz', '583920471628394',
+            'tres tristes tigres trigo', 'Ωμέγα αλφα βήτα γάμμα', '海龟在月光下慢慢游回温暖的大海',
+        ];
+        foreach ($aceptables as $contrasena) {
+            MarcoPruebas::afirmarIgual(null, PoliticaContrasenas::validarNuevaContrasena($contrasena), 'Debe aceptarse: ' . $contrasena);
+        }
+
+        // Patrones por separado.
+        MarcoPruebas::afirmar(PatronesContrasena::esProgresionNumerica('1234567891011121314'), 'Progresión 1..14');
+        MarcoPruebas::afirmar(!PatronesContrasena::esProgresionNumerica('583920471628394'), 'Números sin progresión');
+        MarcoPruebas::afirmar(PatronesContrasena::esPeriodico('umar2026umar202'), 'Periódico truncado');
+        MarcoPruebas::afirmar(!PatronesContrasena::esPeriodico('casagrandecasa'), 'Repetir una palabra corta no es periódico');
+        MarcoPruebas::afirmar(PatronesContrasena::estaCubiertoPorTramos('1qaz2wsx3edc4rf'), 'Columnas del teclado');
+        MarcoPruebas::afirmar(!PatronesContrasena::estaCubiertoPorTramos('lasolasdepuertoescondido'), 'Una frase no queda cubierta por tramos');
     });
 
     $marco->probar('U15', 'La contraseña no puede contener el nombre, el correo ni la matrícula de la cuenta', static function (): void {

@@ -9,8 +9,13 @@ declare(strict_types=1);
  *  - Al menos LONGITUD_MINIMA_CONTRASENA (15) caracteres y hasta 128.
  *  - Se admiten espacios, Unicode y pegado; NO se exigen mayúsculas,
  *    números ni símbolos, ni cambios periódicos.
+ *  - La longitud cuenta cada carácter visible (punto de código Unicode);
+ *    los caracteres invisibles de formato no cuentan.
+ *  - Sin contar espacios, signos ni repeticiones seguidas deben quedar al
+ *    menos ListaBloqueoContrasenas::MINIMO_CONTENIDO letras o dígitos (el
+ *    relleno no puede completar la longitud de una palabra corta).
  *  - Se rechazan las contraseñas comunes o predecibles con
- *    ListaBloqueoContrasenas (lista + secuencias + repeticiones). Una cadena
+ *    ListaBloqueoContrasenas (lista, variantes y patrones). Una cadena
  *    numérica de 15 caracteres NO se rechaza por ser numérica, solo si es
  *    predecible o está en la lista.
  *  - Además se rechazan las que contienen datos de la propia persona
@@ -25,7 +30,10 @@ declare(strict_types=1);
 final class PoliticaContrasenas
 {
     /** Mensaje único: no revela qué regla ni qué lista se aplicó. */
-    public const MENSAJE_BLOQUEADA = 'Esta contraseña es muy común o fácil de adivinar. Por favor, elija otra.';
+    public const MENSAJE_BLOQUEADA = 'Esta contraseña es muy común o fácil de adivinar. Evite series (1234, abcd, qwerty), repeticiones y palabras comunes con números. Por favor, elija otra.';
+
+    /** Mensaje cuando el relleno (espacios, signos, repeticiones) completa la longitud. */
+    public const MENSAJE_POCO_CONTENIDO = 'Use al menos %d letras o números distintos; los espacios, los signos y las repeticiones seguidas no cuentan.';
 
     /** Mensaje cuando contiene datos de la cuenta. */
     public const MENSAJE_DATOS_PERSONALES = 'La contraseña no debe incluir su nombre, su correo ni su matrícula. Por favor, elija otra.';
@@ -45,7 +53,7 @@ final class PoliticaContrasenas
         if ($contrasena === null || $contrasena === '') {
             return 'Escriba una contraseña.';
         }
-        $longitud = mb_strlen($contrasena);
+        $longitud = ListaBloqueoContrasenas::contarCaracteres($contrasena);
         if ($longitud < LONGITUD_MINIMA_CONTRASENA) {
             return sprintf('La contraseña debe tener al menos %d caracteres.', LONGITUD_MINIMA_CONTRASENA);
         }
@@ -55,6 +63,9 @@ final class PoliticaContrasenas
         $limiteBytes = GestorContrasenas::obtenerLimiteBytes();
         if ($limiteBytes !== null && strlen($contrasena) > $limiteBytes) {
             return 'La contraseña es demasiado larga. Por favor, use una más corta.';
+        }
+        if (ListaBloqueoContrasenas::tieneContenidoInsuficiente($contrasena)) {
+            return sprintf(self::MENSAJE_POCO_CONTENIDO, ListaBloqueoContrasenas::MINIMO_CONTENIDO);
         }
         if (ListaBloqueoContrasenas::esContrasenaDebil($contrasena)) {
             return self::MENSAJE_BLOQUEADA;

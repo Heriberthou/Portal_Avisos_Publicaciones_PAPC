@@ -136,6 +136,46 @@ Detalle y respuesta de cada hallazgo en `docs/revision-codex.md`.
 - **Contraste:** texto blanco sobre la tarjeta con más de 7:1 y sobre el botón violeta con 5.5:1; foco visible
   en dorado claro. Revisado en navegador a 1440, 1280 y 375 px de ancho (sin desplazamiento horizontal).
   **No** se probó con lector de pantalla.
+### Revisión de la política de contraseñas (20/11/2026)
+
+Reparto acordado en `docs/COORDINACION.md`: Codex revisa y documenta en `docs/revision-codex.md`; Claude reproduce por HTTP,
+corrige y agrega regresiones. Evidencia completa (antes y después) en `docs/evidencia-politica-contrasenas.txt`.
+
+**Rutas que crean o cambian una contraseña:** solo `POST /activar-cuenta` y `POST /restablecer-contrasena`, ambas por
+`ServicioCredenciales` → `PoliticaContrasenas`. Las herramientas de consola no fijan contraseñas (entregan enlaces). Una ruta
+indirecta: "Validar y reactivar" devolvía el acceso a una cuenta del registro anterior **con su contraseña antigua**.
+
+| Hallazgo | Evidencia | Esperado | Obtenido antes | Corrección |
+|---|---|---|---|---|
+| Relleno, variantes y patrones (coincide con R-10 de Codex) | `tests/reproducir-politica-contrasenas.php`, por HTTP sin JavaScript, activación y restablecimiento | Rechazo (HTTP 422) | 18 de 19 casos aceptados y utilizables para entrar: `hola!!!!!!!!!!!`, `Password12345678`, `P@ssw0rd2024!!!!`, `123456789123456`, `1234567891011121314`, `246810121416182`, `1qaz2wsx3edc4rf`, `abcdefghijklmn1`, dígitos de ancho completo, palabra + espacios de ancho cero… | `PatronesContrasena` (nuevo), `ListaBloqueoContrasenas`, `PoliticaContrasenas`, palabras base en `config/contrasenas-comunes.txt`. Después: 0 discrepancias en 51 comprobaciones |
+| Cuentas del registro anterior conservan su contraseña | Prueba R10 (integración): cuenta con `123456789012345` (el registro la aceptaba antes del commit `4c88521`) validada por web y por consola | La contraseña antigua deja de servir | `iniciarSesion` devolvía `EXITO` | Al validarla queda **por activar y sin contraseña** y recibe un enlace de activación (`UsuarioModel::convertirEnInvitadaSinContrasena`) |
+
+**Reglas que se aplican ahora** (solo en el servidor; la contraseña real nunca se altera):
+1. Longitud de 15 a 128 caracteres; cada carácter visible cuenta uno y los invisibles de formato (espacio de ancho cero) no cuentan.
+2. Sin contar espacios, signos ni repeticiones seguidas deben quedar **al menos 8 letras o dígitos** (decisión del proyecto, no un
+   requisito de NIST). Mensaje propio: "Use al menos 8 letras o números distintos…".
+3. Se evalúan variantes de la misma contraseña: forma Unicode compatible NFKC, sin repeticiones seguidas, con sustituciones típicas
+   (`@`→a, `0`→o…) y sin lo que no es letra al principio y al final (`2024P@ssw0rd!!` → `password`). Cada variante se compara completa
+   con la lista y con los patrones: pocos caracteres distintos, texto periódico (aunque esté cortado), casi todo en tramos de
+   secuencia, repetición o teclas vecinas (filas y columnas), y progresiones numéricas (1 2 3…14, 2 4 6…, 100 200 300, años).
+4. Las frases siguen aceptándose, también en otros alfabetos y con números (`Tengo 3 perros y 2 gatos`, `ventana azul junto al mar 1987`).
+   No se exigen mayúsculas, números ni símbolos.
+
+**Referencia normativa (sin afirmar cumplimiento):** NIST SP 800-63B-4, sección 3.1.1.2 (verificadores de contraseñas): longitud
+mínima de 15 cuando la contraseña es el único factor, comparación con una lista de valores comúnmente usados, esperados o
+comprometidos, no imponer reglas de composición, aceptar Unicode y contar cada punto de código como un carácter, y aplicar
+normalización NFKC o NFKD. Este proyecto aplica NFKC **solo para evaluar** la contraseña; el hash se sigue calculando sobre el texto
+original para no invalidar contraseñas ya guardadas (pendiente de decidir). Pasar estas pruebas no equivale a certificar
+cumplimiento de NIST ni de ninguna norma ISO.
+
+**Pruebas:** U07b (unitaria, incluye los casos de Codex `1234567891234567` y `1234567890123456A` y 13 controles aceptables), H04 y
+H08 (HTTP sin JavaScript: activación y restablecimiento; rechazar no cambia la contraseña ni gasta el enlace), R10 (integración).
+Mutaciones detectadas: quitar la regla de contenido, quitar las variantes, quitar la progresión numérica, quitar los tramos (fallan U07b
+y U07) y conservar la contraseña al validar una cuenta antigua (fallan R03 y R10).
+
+**Pendiente:** comparar el código del servidor con el repositorio (falta la salida de `git log -1` y `git status` en el servidor);
+R-11 de Codex (inicio de sesión con una sesión ya abierta) no se ha corregido; el contador del navegador
+(`validacion-formularios.js`, reservado por Codex) cuenta los caracteres invisibles, a diferencia del servidor.
 ### Enviar correos de verdad (CORREO_MODO=smtp, 20/11/2026)
 
 El portal envía por SMTP con su propio cliente (`app/servicios/ClienteSmtp.php`, sin librerías externas): conexión cifrada
@@ -186,13 +226,14 @@ Con Gmail, `CORREO_REMITENTE` debe ser la misma cuenta. Los espacios de la clave
    CORREO_MODO=buzon_pruebas
    CORREO_REMITENTE=no-responder@papc.invalid
    ```
-5. **Primer principal** (habilita también tu cuenta anterior):
+5. **Primer principal** (si usas tu cuenta anterior, la consola la valida y te da un enlace para crear una contraseña nueva):
    `C:\xampp\php\php.exe herramientas\inicializar-administrador-principal.php tu.correo@dominio.mx`.
    Si la cuenta no existe, agrega tu nombre: `... tu.correo@dominio.mx "Nombre(s)" "Apellido paterno"`.
    La consola imprime el enlace de activación (si la cuenta es nueva) y el **enlace para configurar el segundo factor**
    (vence en 1 h). Inicia sesión y abre ese enlace en el mismo navegador; configura la aplicación (Google
    Authenticator, Microsoft Authenticator o FreeOTP) y guarda los 10 códigos de recuperación, que se muestran **una vez**.
-6. **Cuentas anteriores**: entra a `/admin/usuarios` y usa "Validar y reactivar" en cada cuenta que confirmes.
+6. **Cuentas anteriores**: entra a `/admin/usuarios` y usa "Validar y reactivar" en cada cuenta que confirmes. Su contraseña
+   anterior deja de servir: la persona recibe un enlace para crear una nueva con la política vigente.
 7. **Leer los correos de prueba**: `C:\xampp\php\php.exe herramientas\ver-buzon-pruebas.php correo@dominio.mx`.
 8. **Emergencia** (se perdieron teléfono y códigos): `C:\xampp\php\php.exe herramientas\restablecer-segundo-factor.php correo@dominio.mx`
    e imprime un enlace nuevo que solo debe entregarse a la persona titular.
@@ -204,7 +245,7 @@ las migraciones, la aplicación responde error 500.
 
 Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 local (base desechable `papc_db_pruebas`, cuenta de
 aplicación con los GRANT de `usuario-aplicacion.sql`), servidor embebido `php -S`.
-Resultado: **82/82** (20 unitarias, 44 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
+Resultado: **84/84** (21 unitarias, 45 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
 **No se ejecutaron en el XAMPP del servidor.**
 
 | AC | Caso | Prueba(s) | Resultado |
@@ -218,7 +259,7 @@ Resultado: **82/82** (20 unitarias, 44 de integración, 18 HTTP). Salida complet
 | AC-07 | Rechazo válido | P28 | Pasa |
 | AC-08 | Activación con enlace vencido | P30b | Pasa |
 | AC-09 | Token usado dos veces | P30a, P32 | Pasa **en secuencia**; el consumo simultáneo del mismo token no se probó |
-| AC-10 / AC-11 | Contraseña común / frase segura de 15+ | U07, U15, P30a, H04 | Pasa |
+| AC-10 / AC-11 | Contraseña común / frase segura de 15+ | U07, U07b, U15, P30a, H04, H08 | Pasa (incluye relleno, variantes y series; ver "Revisión de la política de contraseñas") |
 | AC-12 | Cuenta INVITADA intenta login | P29, P07b | Pasa |
 | AC-13 | Usuario ACTIVO inicia sesión | P31, P06b | Pasa |
 | AC-14 | Administrador sin segundo factor | P26a, P35, R02, H05 | Pasa |
@@ -259,7 +300,8 @@ bloqueo de la cuenta, antes de invalidar nada.
 6. **Segundo factor**: el enlace de configuración llega al correo de la cuenta; si alguien controla a la vez la
    contraseña y el buzón, puede configurarlo. En modo `buzon_pruebas` el "buzón" es una carpeta del servidor, así que
    quien tenga acceso a esa consola podría leerlo. No hay código QR (la clave se escribe a mano).
-7. **Lista de bloqueo** local y pequeña; no se consulta un corpus de contraseñas filtradas.
+7. **Lista de bloqueo** local y pequeña; no se consulta un corpus de contraseñas filtradas. Los patrones reducen, pero no eliminan,
+   las contraseñas predecibles: una contraseña aceptada no es necesariamente fuerte.
 8. **Aviso de privacidad**: es un borrador del prototipo; responsable y plazos de conservación los define la institución.
 9. **MariaDB 10.4** (la del XAMPP): las migraciones 004 y 005 y sus reversiones se probaron en MariaDB 11.5; no se
    ejecutaron en 10.4.

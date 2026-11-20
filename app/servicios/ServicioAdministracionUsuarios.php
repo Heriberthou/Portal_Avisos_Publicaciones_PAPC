@@ -78,7 +78,10 @@ final class ServicioAdministracionUsuarios
      *
      * Reactivar una cuenta heredada pendiente (suspendida por la migración
      * 005, sin validación institucional) registra en ese momento la
-     * validación y a quien la autorizó (hallazgo R-03).
+     * validación y a quien la autorizó (hallazgo R-03). Además la deja POR
+     * ACTIVAR y sin contraseña: su contraseña se creó con el registro anterior,
+     * que no aplicaba la política vigente, así que la persona crea una nueva
+     * con el enlace de activación que se le envía.
      *
      * @param array<string, mixed> $usuarioActor Administrador autenticado.
      * @param int $idUsuarioObjetivo Cuenta a modificar.
@@ -107,6 +110,7 @@ final class ServicioAdministracionUsuarios
         }
 
         $esValidacionHeredada = false;
+        $tokenActivacion = null;
         $this->conexion->beginTransaction();
         try {
             $actorVigente = $this->bloquearYRevalidarActor($usuarioActor, 'gestionar_estado_cuenta');
@@ -139,12 +143,16 @@ final class ServicioAdministracionUsuarios
             }
 
             $esValidacionHeredada = $estadoNuevo === UsuarioModel::ESTADO_ACTIVA && UsuarioModel::esCuentaHeredadaPendiente($usuarioObjetivo);
-            if (!$this->usuarioModel->actualizarEstadoCuenta($idUsuarioObjetivo, $estadoAnterior, $estadoNuevo)) {
+            $aplicado = $esValidacionHeredada
+                ? $this->usuarioModel->convertirEnInvitadaSinContrasena($idUsuarioObjetivo, $estadoAnterior)
+                : $this->usuarioModel->actualizarEstadoCuenta($idUsuarioObjetivo, $estadoAnterior, $estadoNuevo);
+            if (!$aplicado) {
                 throw new RuntimeException('La cuenta cambió mientras se procesaba la operación. Revise sus datos e intente de nuevo.');
             }
             if ($esValidacionHeredada) {
                 $this->usuarioModel->registrarValidacionInstitucional($idUsuarioObjetivo, $idUsuarioActor);
                 $this->auditoriaModel->registrarEventoAuditoria($idUsuarioActor, AuditoriaModel::ACCION_VALIDACION_CUENTA_HEREDADA, 'usuario', $idUsuarioObjetivo, ['canal' => 'WEB']);
+                $tokenActivacion = $this->emitirActivacionHeredada($idUsuarioObjetivo);
             }
             if ($estadoNuevo !== UsuarioModel::ESTADO_ACTIVA) {
                 $this->tokenCuentaModel->invalidarTokens($idUsuarioObjetivo);
@@ -159,9 +167,12 @@ final class ServicioAdministracionUsuarios
             throw $excepcion;
         }
 
-        return $this->resultado(true, $esValidacionHeredada
-            ? 'Cuenta validada y reactivada. Se registró que usted autorizó su pertenencia institucional.'
-            : 'Estado actualizado. Las sesiones abiertas de esa cuenta se cerraron.');
+        if ($esValidacionHeredada) {
+            $enviado = $this->servicioCorreo->enviarInvitacionActivacion((string) $usuarioObjetivo['correo_electronico_usuario'], (string) $usuarioObjetivo['nombres_usuario'], (string) $tokenActivacion);
+            return $this->resultado(true, 'Cuenta validada. Se registró que usted autorizó su pertenencia institucional. Su contraseña anterior ya no sirve: '
+                . $this->describirEnvioActivacion($enviado, $idUsuarioObjetivo));
+        }
+        return $this->resultado(true, 'Estado actualizado. Las sesiones abiertas de esa cuenta se cerraron.');
     }
 
     /**
@@ -424,9 +435,11 @@ final class ServicioAdministracionUsuarios
             if ($usuario !== null) {
                 $idUsuario = (int) $usuario['id_usuario'];
                 if (UsuarioModel::esCuentaHeredadaPendiente($usuario)) {
-                    $this->usuarioModel->actualizarEstadoCuenta($idUsuario, UsuarioModel::ESTADO_SUSPENDIDA, UsuarioModel::ESTADO_ACTIVA);
+                    // Igual que en la web: la contraseña del registro anterior no se conserva.
+                    $this->usuarioModel->convertirEnInvitadaSinContrasena($idUsuario, UsuarioModel::ESTADO_SUSPENDIDA);
                     $this->usuarioModel->registrarValidacionInstitucional($idUsuario, null);
                     $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_VALIDACION_CUENTA_HEREDADA, 'usuario', $idUsuario, ['canal' => 'CONSOLA']);
+                    $tokenActivacion = $this->emitirActivacionHeredada($idUsuario);
                 } elseif (!UsuarioModel::puedeIniciarSesion($usuario)) {
                     $this->conexion->rollBack();
                     return $this->resultado(false, 'Esa cuenta no está activa. Actívela antes de asignarle un rol administrativo.') + $sinTokens;
@@ -467,7 +480,7 @@ final class ServicioAdministracionUsuarios
         }
         $mensaje = $tokenActivacion === null
             ? 'Cuenta habilitada como administrador principal. Debe activar la verificación en dos pasos con el enlace.'
-            : 'Cuenta de administrador principal creada y pendiente de activar. Use el primer enlace para activarla y el segundo para activar la verificación en dos pasos.';
+            : 'Cuenta de administrador principal pendiente de activar. Use el primer enlace para crear su contraseña y el segundo para activar la verificación en dos pasos.';
         return $this->resultado(true, $mensaje) + ['tokenActivacion' => $tokenActivacion, 'tokenEnrolamiento' => $tokenEnrolamiento];
     }
 
@@ -562,6 +575,38 @@ final class ServicioAdministracionUsuarios
             'correo'  => (string) $usuarioObjetivo['correo_electronico_usuario'],
             'nombres' => (string) $usuarioObjetivo['nombres_usuario'],
         ];
+    }
+
+    /**
+     * Enlace de activación para una cuenta heredada recién validada (dentro
+     * de la transacción de quien llama).
+     *
+     * @param int $idUsuario Cuenta.
+     * @return string Token en claro (se envía por correo o lo imprime la consola).
+     */
+    private function emitirActivacionHeredada(int $idUsuario): string
+    {
+        $token = GeneradorTokens::generarToken();
+        $this->tokenCuentaModel->crearToken($idUsuario, TokenCuentaModel::FINALIDAD_ACTIVACION, GeneradorTokens::calcularHashToken($token), VIGENCIA_TOKEN_ACTIVACION_SEGUNDOS);
+        return $token;
+    }
+
+    /**
+     * Texto honesto sobre el envío del enlace de activación (R-07).
+     *
+     * @param bool $enviado Resultado de ServicioCorreo.
+     * @param int $idUsuarioObjetivo Cuenta destinataria (para la auditoría).
+     * @return string Frase para el mensaje al administrador.
+     */
+    private function describirEnvioActivacion(bool $enviado, int $idUsuarioObjetivo): string
+    {
+        if (!$enviado) {
+            $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_ENVIO_CORREO_FALLIDO, 'usuario', $idUsuarioObjetivo, ['tipoCorreo' => 'ACTIVACION']);
+            return 'no fue posible enviar el enlace para crear una contraseña nueva; la persona puede pedirlo con "¿Olvidó su contraseña?".';
+        }
+        return $this->servicioCorreo->esModoBuzonPruebas()
+            ? 'el enlace para crear una contraseña nueva quedó en el buzón de pruebas (modo de demostración; no se envió por correo).'
+            : 'se envió a su correo un enlace para crear una contraseña nueva.';
     }
 
     /**
