@@ -100,10 +100,29 @@ y la bitácora viven en `AdminUsuarioController`. Se eliminó `registro.php`.
 - **Contraste** (WCAG 1.4.3): el botón dorado tenía texto blanco a 2.42:1; ahora es marino sobre oro (5.60:1; 7.29:1 en
   hover) y el foco es marino (13.5:1). Botones de al menos 44 px. "Procesando..." evita envíos dobles.
 
+### Correcciones de la revisión de Codex (R-01 a R-08, 20/11/2026)
+
+Detalle y respuesta de cada hallazgo en `docs/revision-codex.md`.
+
+| Hallazgo | Corrección | Dónde | Prueba |
+|---|---|---|---|
+| R-01 Continuidad del principal | Dentro de la transacción se bloquean, en orden fijo, las filas de los principales, del actor y del objetivo; se relee al actor (estado, versión de sesión y permiso) y se cuenta con bloqueo que quede un principal activo | `ServicioAdministracionUsuarios::bloquearYRevalidarActor` | R01 |
+| R-02 Enrolamiento con solo contraseña | Configurar el segundo factor exige además un enlace de un solo uso (1 h) enviado al correo de la cuenta o entregado por la consola; se consume en la misma transacción que guarda el secreto. Promover y restablecer emiten uno nuevo | Migración 005, `ServicioSegundoFactor`, `SegundoFactorController` | P26a, R02, H05 |
+| R-03 Cuentas heredadas activas | La migración 005 suspende (sin borrar) las cuentas sin validación institucional y lo audita; iniciar sesión exige validación registrada; "Validar y reactivar" registra quién validó; la consola habilita al principal | Migración 005, `UsuarioModel::puedeIniciarSesion`, `/admin/usuarios` | R03, R03b |
+| R-04 Emisión concurrente | Emitir un enlace bloquea primero la cuenta o la solicitud y luego invalida e inserta en una transacción | `TokenCuentaModel`, `TokenSolicitudModel` | R04 (incluye 8 procesos simultáneos) |
+| R-05 Re-autenticación sin límite | 5 confirmaciones fallidas por administrador en 15 min; al llegar al límite no se ejecuta la operación | `ServicioAdministracionUsuarios::reautenticar` | R05 |
+| R-06 Límites con peticiones simultáneas | Cada intento se reserva (INSERT) antes de comprobar la credencial y se cuenta incluyéndose; si excede, se retira sin comprobar | `LimitadorIntentos::reservarIntento` | R06 |
+| R-07 Envío fingido | Instrucciones condicionales ("si recibe un mensaje..."), aviso de modo de demostración y mensajes al administrador que dicen si quedó en el buzón, se entregó al servicio o falló | `solicitud-recibida.php`, `ServicioSolicitudAcceso`, `ServicioCorreo` | R07, H03 |
+| R-08 Reversión que reabre cuentas | La reversión 004 se detiene antes de borrar si hay cuentas restringidas utilizables; `004-preparar-reversion.sql` (con autorización) las bloquea y deja evidencia | `004-...-revertir.sql`, `004-preparar-reversion.sql` | R03b |
+
 ### Actualizar el servidor (`equipo_7`)
 
 1. **Respaldo**: phpMyAdmin → `equipo_7` → Exportar.
-2. **Migración 004**: phpMyAdmin → `equipo_7` → SQL → pegar `database/migraciones/004-solicitud-acceso-activacion.sql` → Continuar.
+2. **Migraciones 004 y 005**, en ese orden: phpMyAdmin → `equipo_7` → SQL → pegar
+   `database/migraciones/004-solicitud-acceso-activacion.sql` → Continuar; después lo mismo con
+   `database/migraciones/005-transicion-cuentas-y-enrolamiento.sql`.
+   **Efecto de la 005:** las cuentas creadas con el registro anterior (incluida la tuya) quedan SUSPENDIDAS hasta
+   validarlas; no se borra nada. Antes de aplicarla puedes ver cuáles son con la consulta que trae al inicio.
 3. **Código**: en la Shell de XAMPP: `cd /d C:\xampp\htdocs\papc` y después `git pull`.
 4. **`.env`** del servidor: agregar
    ```
@@ -111,22 +130,25 @@ y la bitácora viven en `AdminUsuarioController`. Se eliminó `registro.php`.
    CORREO_MODO=buzon_pruebas
    CORREO_REMITENTE=no-responder@papc.invalid
    ```
-5. **Primer principal**. Si tu cuenta ya existía (queda ACTIVA con la migración):
+5. **Primer principal** (habilita también tu cuenta anterior):
    `C:\xampp\php\php.exe herramientas\inicializar-administrador-principal.php tu.correo@dominio.mx`.
-   Si no existe, agrega tu nombre: `... tu.correo@dominio.mx "Nombre(s)" "Apellido paterno"` y abre el enlace de
-   activación que imprime. Al iniciar sesión te pedirá configurar el segundo factor (Google Authenticator, Microsoft
-   Authenticator o FreeOTP) y te mostrará 10 códigos de recuperación **una sola vez**.
-6. **Leer los correos de prueba**: `C:\xampp\php\php.exe herramientas\ver-buzon-pruebas.php correo@dominio.mx`.
-7. **Emergencia** (se perdieron teléfono y códigos): `C:\xampp\php\php.exe herramientas\restablecer-segundo-factor.php correo@dominio.mx`.
+   Si la cuenta no existe, agrega tu nombre: `... tu.correo@dominio.mx "Nombre(s)" "Apellido paterno"`.
+   La consola imprime el enlace de activación (si la cuenta es nueva) y el **enlace para configurar el segundo factor**
+   (vence en 1 h). Inicia sesión y abre ese enlace en el mismo navegador; configura la aplicación (Google
+   Authenticator, Microsoft Authenticator o FreeOTP) y guarda los 10 códigos de recuperación, que se muestran **una vez**.
+6. **Cuentas anteriores**: entra a `/admin/usuarios` y usa "Validar y reactivar" en cada cuenta que confirmes.
+7. **Leer los correos de prueba**: `C:\xampp\php\php.exe herramientas\ver-buzon-pruebas.php correo@dominio.mx`.
+8. **Emergencia** (se perdieron teléfono y códigos): `C:\xampp\php\php.exe herramientas\restablecer-segundo-factor.php correo@dominio.mx`
+   e imprime un enlace nuevo que solo debe entregarse a la persona titular.
 
 El orden importa: con la migración aplicada y el código anterior, el registro viejo falla; con el código nuevo y sin
-la migración, la aplicación responde error 500 (la columna `estado_cuenta_usuario` no existe).
+las migraciones, la aplicación responde error 500.
 
-### Pruebas ejecutadas (19/11/2026)
+### Pruebas ejecutadas (20/11/2026)
 
-Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 local en `127.0.0.1:3399` (base desechable
-`papc_db_pruebas`, cuenta de aplicación con los GRANT de `usuario-aplicacion.sql`), servidor embebido `php -S`.
-Resultado: **71/71** (19 unitarias, 34 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
+Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 local (base desechable `papc_db_pruebas`, cuenta de
+aplicación con los GRANT de `usuario-aplicacion.sql`), servidor embebido `php -S`.
+Resultado: **79/79** (19 unitarias, 42 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
 **No se ejecutaron en el XAMPP del servidor.**
 
 | AC | Caso | Prueba(s) | Resultado |
@@ -134,30 +156,37 @@ Resultado: **71/71** (19 unitarias, 34 de integración, 18 HTTP). Salida complet
 | AC-01 | Visitante en `/solicitar-acceso` sin opciones administrativas | H01, P01 | Pasa |
 | AC-02 | Solicitud con rol o estado adulterados | U02, P10a, P10b | Pasa (400, auditado, sin solicitud) |
 | AC-03 | Correo no verificado no es aprobable | P02 | Pasa |
-| AC-04 | Solicitud duplicada | P03 | Pasa |
+| AC-04 | Solicitud duplicada | P03, R04 | Pasa |
 | AC-05 / AC-15 | Usuario común en la bandeja o aprobando | P11a, P11b | Pasa (403, sin cambios) |
 | AC-06 | Aprobación válida | P27, H06, P37 | Pasa |
 | AC-07 | Rechazo válido | P28 | Pasa |
 | AC-08 | Activación con enlace vencido | P30b | Pasa |
-| AC-09 | Token usado dos veces | P30a, P32 | Pasa **en secuencia**; el uso simultáneo real no se probó |
+| AC-09 | Token usado dos veces | P30a, P32 | Pasa **en secuencia**; el consumo simultáneo del mismo token no se probó |
 | AC-10 / AC-11 | Contraseña común / frase segura de 15+ | U07, U15, P30a, H04 | Pasa |
 | AC-12 | Cuenta INVITADA intenta login | P29, P07b | Pasa |
 | AC-13 | Usuario ACTIVO inicia sesión | P31, P06b | Pasa |
-| AC-14 | Administrador sin segundo factor | P26a, P35, H05 | Pasa |
+| AC-14 | Administrador sin segundo factor | P26a, P35, R02, H05 | Pasa |
 | AC-16 | Cuenta suspendida con cookie antigua | P33 | Pasa |
 | AC-17 / AC-18 | Recuperación neutral; token usado o vencido | P32, H08 | Pasa |
 | AC-19 | POST sin CSRF | P13b, P10a | Pasa |
 | AC-20 | SQL y HTML en campos | P14b, P14c | Pasa |
-| AC-21 | Peticiones reiteradas | P15, P15b | Pasa |
+| AC-21 | Peticiones reiteradas | P15, P15b, R05, R06 | Pasa |
 | AC-22 | Cerrar sesión y "Atrás" | P08b, P06b (`Cache-Control: no-store`) | Pasa por HTTP; el botón Atrás de un navegador real no se probó |
 | AC-23 | Rutas internas por HTTP | P16 | Pasa con `php -S`; en Apache verificar con los `curl` de la Etapa 5. **HTTPS no demostrado** |
 | AC-24 / AC-25 | Teclado, lector de pantalla, móvil, contraste | — | Parcial: contraste calculado y vista móvil (375 px) revisada; **sin prueba con lector de pantalla ni con usuarios** |
-| AC-26 | Caída del servicio de correo | U14 | Parcial: un modo de correo inválido devuelve "no enviado"; el mensaje "envío pendiente" de la bandeja no tiene prueba automática |
+| AC-26 | Caída del servicio de correo | U14, R07, H03 | Pasa: la aprobación dice "envío pendiente" y se puede reenviar |
 | AC-27 | Primer principal y reinicialización | P19, H02 | Pasa |
 
-**Prueba de mutación** (19/11/2026): se introdujeron a propósito tres defectos y las pruebas los detectaron:
-aprobar sin correo verificado (falla P02); administrador sin segundo factor (fallan P26a, P26b, P37, P38);
-cuenta aprobada que nace ACTIVA (fallan P19, P30a, P26a, P02). Después se restauró el código.
+**Prueba de mutación.** 19/11/2026: tres defectos introducidos a propósito, todos detectados (aprobar sin correo
+verificado: P02; administrador sin segundo factor: P26a, P26b, P37, P38; cuenta aprobada que nace ACTIVA: P19, P30a,
+P26a, P02). 20/11/2026, sobre las correcciones: quitar la revalidación del actor (falla R01); configurar el segundo
+factor sin enlace (fallan P26a, P26b, R02); re-autenticación sin límite (falla R05); emitir enlaces sin bloquear la
+cuenta (falla R04); iniciar sesión sin validación institucional (falla R03). Después se restauró el código.
+
+Nota sobre R-04: con 8 procesos simultáneos (5 rondas, también en READ COMMITTED) nunca quedaron dos enlaces vigentes,
+**ni siquiera sin el bloqueo explícito**: los bloqueos propios de InnoDB hacen muy estrecha la ventana de la carrera.
+Por eso la prueba que detecta la falta del bloqueo es determinista: comprueba que una segunda emisión espera en el
+bloqueo de la cuenta, antes de invalidar nada.
 
 ### Limitaciones de esta versión
 
@@ -165,16 +194,17 @@ cuenta aprobada que nace ACTIVA (fallan P19, P30a, P26a, P02). Después se resta
    `mail` depende de configurar SMTP en `php.ini` y no se probó.
 2. **HTTPS** no está configurado en el laboratorio (SEG-15, AC-23): contraseñas, cookies y enlaces viajan sin cifrar.
 3. **Padrón institucional**: el administrador coteja manualmente y escribe el método; no hay integración con un padrón.
-4. **Concurrencia real** (AC-09): el consumo de tokens es un `UPDATE` condicional (solo uno puede afectar la fila),
-   pero no se ejecutó una prueba con dos peticiones simultáneas (`php -S` en Windows atiende una a la vez).
+4. **Consumo simultáneo del mismo token** (AC-09): es un `UPDATE` condicional (solo uno puede afectar la fila), pero no
+   se ejecutó una prueba con dos peticiones que consuman el mismo token a la vez.
 5. **Tiempos**: las respuestas neutrales tienen el mismo texto, pero cuando el correo existe se escribe un mensaje
    (más trabajo); midiendo tiempos con precisión podría notarse la diferencia.
-6. **Segundo factor**: si alguien conoce la contraseña de un administrador que aún no configuró su TOTP, podría
-   configurarlo él; el principal debe configurarlo en cuanto recibe el rol. No hay código QR (la clave se escribe a mano).
+6. **Segundo factor**: el enlace de configuración llega al correo de la cuenta; si alguien controla a la vez la
+   contraseña y el buzón, puede configurarlo. En modo `buzon_pruebas` el "buzón" es una carpeta del servidor, así que
+   quien tenga acceso a esa consola podría leerlo. No hay código QR (la clave se escribe a mano).
 7. **Lista de bloqueo** local y pequeña; no se consulta un corpus de contraseñas filtradas.
 8. **Aviso de privacidad**: es un borrador del prototipo; responsable y plazos de conservación los define la institución.
-9. **MariaDB 10.4** (la del XAMPP): la migración 004 se probó en MariaDB 11.5 (aplicar, revertir y volver a aplicar);
-   las columnas `PERSISTENT` con `UNIQUE` y los `CHECK` están soportados desde 10.2, pero no se ejecutó en 10.4.
+9. **MariaDB 10.4** (la del XAMPP): las migraciones 004 y 005 y sus reversiones se probaron en MariaDB 11.5; no se
+   ejecutaron en 10.4.
 10. **Esperas progresivas** (SEG-07): se usa una ventana deslizante de 15 min, no esperas que crecen.
 11. **Usabilidad** (sección 8.5): falta la prueba con al menos una persona ajena al proyecto.
 
@@ -766,11 +796,11 @@ fuera de camelCase, ninguna clase CSS fuera de kebab-case.
 | NOM-01 BD minúsculas snake_case | `equipo_7` (servidor), `papc_db_pruebas` | `.env.example`, `tests/BaseDatosPruebas.php` |
 | NOM-02 Tablas en singular | `usuario`, `auditoria`, `intento_acceso` | `database/migraciones/002-intento-acceso.sql` |
 | NOM-03 PK `id_<entidad>` | `id_intento_acceso` | migración 002 |
-| NOM-04 FK descriptiva | Ninguna FK nueva (decisión justificada); existentes intactas: `id_usuario_actor` | `schema.sql` |
+| NOM-04 FK descriptiva | Migración 004: `id_usuario_revisor`, `id_usuario_vinculado`, `id_usuario_autorizador`, `id_usuario_destinatario`, `id_solicitud_acceso_destinataria`, `id_usuario_propietario`; existentes intactas: `id_usuario_actor` | `004-solicitud-acceso-activacion.sql`, `schema.sql` |
 | NOM-05 Columna atributo + entidad | `apellido_paterno_usuario`, `tipo_integrante_usuario`, `huella_origen_intento_acceso` | migraciones 001 a 003 |
 | NOM-06 `uq_<tabla>_<campo>` | `uq_usuario_correo_electronico_usuario` (usada por el registro) | `schema.sql` |
 | NOM-07 `idx_<tabla>_<campo>` | `idx_usuario_estado_verificacion_usuario`, `idx_intento_acceso_fecha_intento_acceso` | migraciones |
-| NOM-08 `fk_<origen>_<relación>` | Sin FK nuevas; `fk_auditoria_usuario_actor` intacta | `schema.sql` |
+| NOM-08 `fk_<origen>_<relación>` | Migración 004: `fk_solicitud_acceso_usuario_revisor`, `fk_token_cuenta_usuario_destinatario`, `fk_usuario_usuario_autorizador`, entre otras; `fk_auditoria_usuario_actor` intacta | `004-solicitud-acceso-activacion.sql` |
 | NOM-09 Estados en MAYÚSCULAS | `PENDIENTE`, `VERIFICADA`, `NO_REQUERIDA`, `ALUMNO`, `PROFESOR` | `UsuarioModel.php` |
 | NOM-10 Clases PascalCase | `AuthController`, `UsuarioModel`, `RoleMiddleware`, `GestorSesion` | `app/` |
 | NOM-11 Métodos camelCase | `registrarUsuario()`, `verificarCredenciales()`, `verificarLimiteIntentos()` | servicios |

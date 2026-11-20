@@ -1,6 +1,6 @@
 PAPC | Evidencia de pruebas automáticas
-Fecha: 2026-11-19 | Rama: feature/diseno | Especificación 1.3
-Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 en 127.0.0.1:3399 (base desechable papc_db_pruebas), servidor embebido php -S.
+Fecha: 2026-11-20 | Rama: feature/diseno | Especificación 1.3 + correcciones R-01 a R-08 (docs/revision-codex.md)
+Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 en 127.0.0.1:3398 (base desechable papc_db_pruebas), servidor embebido php -S.
 Comando: php tests/ejecutar-pruebas.php todas
 
 [PASA] U01     Solicitud de acceso: datos válidos se normalizan y no llevan contraseña ni rol
@@ -54,13 +54,21 @@ Comando: php tests/ejecutar-pruebas.php todas
 [PASA] P09a    Enrutador: rutas protegidas sin sesión responden 401; inexistentes 404; método 405
 [PASA] P10a    AC-02/SEG-01: una solicitud con rol o estado adulterados se rechaza (400), se audita y no se guarda
 [PASA] P23     Verificación de profesor (cuentas anteriores a la 004): solo administradores, sin cambiar el rol
+[PASA] R01     R-01: un principal con permiso ya revocado no puede completar una operación iniciada antes
+[PASA] R02     R-02: configurar el segundo factor exige el enlace del correo de la propia cuenta; el restablecimiento emite uno nuevo
+[PASA] R03     R-03: una cuenta heredada sin validación institucional no entra hasta que un administrador la valida
+[PASA] R03b    R-03/R-08: migración 005, su reversión y la precondición ejecutable de la reversión 004
+[PASA] R04     R-04: emitir un enlace espera el bloqueo de la cuenta y deja uno solo vigente
+[PASA] R05     R-05: la confirmación con contraseña en administración tiene límite de intentos
+[PASA] R06     R-06: los intentos se reservan antes de comprobar: los que están en curso cuentan para el límite
+[PASA] R07     R-07/AC-26: si el correo falla, la aprobación lo dice y se puede reenviar
 [PASA] P39     SEG-16: la bitácora reconstruye aprobaciones y cambios de rol sin contraseñas ni tokens
 [PASA] P22     Mínimo privilegio: la cuenta de la aplicación no altera la auditoría, no borra ni cambia la estructura
 [PASA] H00     El servidor de pruebas responde
 [PASA] H01     AC-01: portada y "Solicitar acceso" públicas, sin contraseña, rol ni opciones administrativas
 [PASA] H02     AC-27: la consola crea al principal con enlace de activación, una sola vez, y no es accesible por web
 [PASA] H04     RF-05: activar por el enlace (URL limpia), rechazo de contraseña común y login separado
-[PASA] H05     AC-14: el principal sin segundo factor no entra a administración; lo configura y recibe sus códigos una vez
+[PASA] H05     AC-14/R-02: el principal sin segundo factor no entra; lo configura solo con el enlace y recibe sus códigos una vez
 [PASA] H03     RF-02/RF-03: solicitud con respuesta neutral, verificación con botón y enlace de un solo uso
 [PASA] H06     AC-06: el principal aprueba en la bandeja con confirmación y método registrado
 [PASA] P06b    AC-13: la persona activa su cuenta y entra; cookie segura y datos no sensibles en /inicio
@@ -75,4 +83,4 @@ Comando: php tests/ejecutar-pruebas.php todas
 [PASA] P16     AC-23: archivos privados, correos de prueba y herramientas no accesibles por HTTP
 [PASA] P15b    AC-21: intentos repetidos por HTTP: 429 aun con la contraseña correcta
 
-Total: 71 | Pasan: 71 | Fallan: 0
+Total: 79 | Pasan: 79 | Fallan: 0

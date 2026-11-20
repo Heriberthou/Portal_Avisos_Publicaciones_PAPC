@@ -13,9 +13,11 @@
  *        php herramientas/inicializar-administrador-principal.php correo@dominio "Nombre(s)" "Apellido paterno" ["Apellido materno"]
  *
  * Reglas:
- *  - Solo funciona si NO existe ningún ADMINISTRADOR_PRINCIPAL; después,
- *    los roles se cambian en /admin/roles con re-autenticación.
- *  - El principal deberá configurar su segundo factor al iniciar sesión.
+ *  - Solo funciona si NO existe ningún ADMINISTRADOR_PRINCIPAL ACTIVO; después,
+ *    los roles se cambian en /admin/roles con re-autenticación. También
+ *    habilita una cuenta heredada que la migración 005 dejó pendiente.
+ *  - Imprime el enlace para configurar el segundo factor (hallazgo R-02):
+ *    sin él, la contraseña sola no permite vincular un autenticador.
  *  - El evento queda en auditoria como INICIALIZACION_ADMINISTRADOR_PRINCIPAL.
  *
  * Este archivo está fuera de public/ y además se niega a ejecutarse vía web.
@@ -68,10 +70,18 @@ try {
 }
 
 fwrite($resultado['exito'] ? STDOUT : STDERR, $resultado['mensaje'] . "\n");
+$servicioCorreo = $dependencias['servicioCorreo'];
 if ($resultado['tokenActivacion'] !== null) {
-    $enlace = $dependencias['servicioCorreo']->construirEnlace('/activar-cuenta', $resultado['tokenActivacion']);
+    $enlace = $servicioCorreo->construirEnlace('/activar-cuenta', $resultado['tokenActivacion']);
     fwrite(STDOUT, $enlace !== null
-        ? "Enlace de activación (un solo uso, vence en 24 h). Ábralo en el navegador de la persona titular:\n{$enlace}\n"
+        ? "\n1) Enlace de ACTIVACIÓN (un solo uso, vence en 24 h). Ábralo en el navegador de la persona titular:\n{$enlace}\n"
         : "Configure APP_URL_PUBLICA en el .env para obtener el enlace; después use \"¿Olvidó su contraseña?\" con ese correo.\n");
+}
+if ($resultado['tokenEnrolamiento'] !== null) {
+    $enlace = $servicioCorreo->construirEnlace('/configurar-segundo-factor', $resultado['tokenEnrolamiento']);
+    $numero = $resultado['tokenActivacion'] !== null ? '2) ' : '';
+    fwrite(STDOUT, $enlace !== null
+        ? "\n{$numero}Enlace para CONFIGURAR EL SEGUNDO FACTOR (un solo uso, vence en 1 h). Ábralo en el mismo navegador donde iniciará sesión:\n{$enlace}\n"
+        : "Configure APP_URL_PUBLICA en el .env para obtener el enlace del segundo factor.\n");
 }
 exit($resultado['exito'] ? 0 : 1);

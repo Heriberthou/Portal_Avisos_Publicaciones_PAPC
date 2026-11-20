@@ -13,7 +13,9 @@ final class TokenCuentaModel
 {
     public const FINALIDAD_ACTIVACION = 'ACTIVACION';
     public const FINALIDAD_RECUPERACION = 'RECUPERACION';
-    public const FINALIDADES = [self::FINALIDAD_ACTIVACION, self::FINALIDAD_RECUPERACION];
+    /** Autoriza configurar el segundo factor (migración 005, hallazgo R-02). */
+    public const FINALIDAD_ENROLAMIENTO_MFA = 'ENROLAMIENTO_MFA';
+    public const FINALIDADES = [self::FINALIDAD_ACTIVACION, self::FINALIDAD_RECUPERACION, self::FINALIDAD_ENROLAMIENTO_MFA];
 
     /**
      * @param PDO $conexion Conexión de config/database.php.
@@ -35,17 +37,56 @@ final class TokenCuentaModel
     public function crearToken(int $idUsuario, string $finalidad, string $hashToken, int $vigenciaSegundos): void
     {
         $this->exigirFinalidad($finalidad);
-        $this->invalidarTokens($idUsuario, $finalidad);
+        // R-04: invalidar e insertar en una transacción que primero bloquea la
+        // cuenta. Dos emisiones simultáneas para la misma cuenta se ejecutan
+        // una tras otra, y solo el último enlace queda vigente.
+        $transaccionPropia = !$this->conexion->inTransaction();
+        if ($transaccionPropia) {
+            $this->conexion->beginTransaction();
+        }
+        try {
+            $bloqueo = $this->conexion->prepare('SELECT id_usuario FROM usuario WHERE id_usuario = :idUsuario FOR UPDATE');
+            $bloqueo->execute(['idUsuario' => $idUsuario]);
+            $bloqueo->fetchAll();
+
+            $this->invalidarTokens($idUsuario, $finalidad);
+            $sentencia = $this->conexion->prepare(
+                'INSERT INTO token_cuenta (id_usuario_destinatario, hash_token_cuenta, finalidad_token_cuenta, fecha_expiracion_token_cuenta)
+                 VALUES (:idUsuario, :hashToken, :finalidad, NOW() + INTERVAL :vigencia SECOND)'
+            );
+            $sentencia->execute([
+                'idUsuario' => $idUsuario,
+                'hashToken' => $hashToken,
+                'finalidad' => $finalidad,
+                'vigencia'  => $vigenciaSegundos,
+            ]);
+            if ($transaccionPropia) {
+                $this->conexion->commit();
+            }
+        } catch (Throwable $excepcion) {
+            if ($transaccionPropia && $this->conexion->inTransaction()) {
+                $this->conexion->rollBack();
+            }
+            throw $excepcion;
+        }
+    }
+
+    /**
+     * Cuenta los enlaces vigentes de una cuenta y finalidad (para pruebas y diagnóstico).
+     *
+     * @param int $idUsuario Cuenta.
+     * @param string $finalidad Finalidad.
+     * @return int Enlaces sin usar y sin vencer.
+     */
+    public function contarTokensVigentes(int $idUsuario, string $finalidad): int
+    {
+        $this->exigirFinalidad($finalidad);
         $sentencia = $this->conexion->prepare(
-            'INSERT INTO token_cuenta (id_usuario_destinatario, hash_token_cuenta, finalidad_token_cuenta, fecha_expiracion_token_cuenta)
-             VALUES (:idUsuario, :hashToken, :finalidad, NOW() + INTERVAL :vigencia SECOND)'
+            'SELECT COUNT(*) FROM token_cuenta WHERE id_usuario_destinatario = :idUsuario AND finalidad_token_cuenta = :finalidad
+               AND fecha_consumo_token_cuenta IS NULL AND fecha_expiracion_token_cuenta > NOW()'
         );
-        $sentencia->execute([
-            'idUsuario' => $idUsuario,
-            'hashToken' => $hashToken,
-            'finalidad' => $finalidad,
-            'vigencia'  => $vigenciaSegundos,
-        ]);
+        $sentencia->execute(['idUsuario' => $idUsuario, 'finalidad' => $finalidad]);
+        return (int) $sentencia->fetchColumn();
     }
 
     /**

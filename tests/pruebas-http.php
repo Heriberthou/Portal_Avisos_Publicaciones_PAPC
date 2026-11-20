@@ -141,12 +141,14 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
             }
         });
 
-        $marco->probar('H02', 'AC-27: la consola crea al principal con enlace de activación, una sola vez, y no es accesible por web', static function () use ($ejecutarHerramienta, $baseDatos, $nuevoCliente, &$tokenPrincipal): void {
+        $marco->probar('H02', 'AC-27: la consola crea al principal con enlace de activación, una sola vez, y no es accesible por web', static function () use ($ejecutarHerramienta, $baseDatos, $nuevoCliente, &$tokenPrincipal, &$tokenEnrolamientoPrincipal): void {
             $herramienta = RUTA_RAIZ . '/herramientas/inicializar-administrador-principal.php';
             $primera = $ejecutarHerramienta([$herramienta, 'paula@http.mx', 'Paula', 'Principal']);
             MarcoPruebas::afirmarIgual(0, $primera['codigo'], 'Primera ejecución: ' . $primera['salida']);
             MarcoPruebas::afirmar(preg_match('#/activar-cuenta\?token=([A-Za-z0-9_-]{43})#', $primera['salida'], $coincidencia) === 1, 'Imprime el enlace de activación');
             $tokenPrincipal = $coincidencia[1];
+            MarcoPruebas::afirmar(preg_match('#/configurar-segundo-factor\?token=([A-Za-z0-9_-]{43})#', $primera['salida'], $coincidenciaMfa) === 1, 'R-02: y el enlace para configurar el segundo factor');
+            $tokenEnrolamientoPrincipal = $coincidenciaMfa[1];
             MarcoPruebas::afirmar(!preg_match('/contrase(ñ|n)a:\s*\S/i', $primera['salida']), 'No imprime ninguna contraseña');
             MarcoPruebas::afirmarIgual('INVITADA', $baseDatos->obtenerFilaUsuario('paula@http.mx')['estado_cuenta_usuario'], 'Cuenta INVITADA');
             MarcoPruebas::afirmarIgual(1, $ejecutarHerramienta([$herramienta, 'otro@http.mx', 'Otro', 'Principal'])['codigo'], 'Segunda ejecución rechazada');
@@ -174,13 +176,16 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
             MarcoPruebas::afirmarIgual(303, $reuso['codigo'], 'El enlace redirige');
         });
 
-        $marco->probar('H05', 'AC-14: el principal sin segundo factor no entra a administración; lo configura y recibe sus códigos una vez', static function () use ($iniciarSesionPorHttp, $obtenerUbicacion, $contrasenaPrincipal, $codigoTotp, &$clientePrincipal, &$secretoPrincipal): void {
+        $marco->probar('H05', 'AC-14/R-02: el principal sin segundo factor no entra; lo configura solo con el enlace y recibe sus códigos una vez', static function () use ($iniciarSesionPorHttp, $obtenerUbicacion, $abrirEnlace, $contrasenaPrincipal, $codigoTotp, &$clientePrincipal, &$secretoPrincipal, &$tokenEnrolamientoPrincipal): void {
             [$cliente, $respuesta] = $iniciarSesionPorHttp('paula@http.mx', $contrasenaPrincipal);
             MarcoPruebas::afirmarIgual('/configurar-segundo-factor', $obtenerUbicacion($respuesta), 'Va a configurar el segundo factor');
             MarcoPruebas::afirmarIgual('/iniciar-sesion', $obtenerUbicacion($cliente->obtener('/admin/solicitudes')), 'Sin segundo factor no hay administración');
             MarcoPruebas::afirmarIgual('/iniciar-sesion', $obtenerUbicacion($cliente->obtener('/inicio')), 'Ni siquiera hay sesión');
 
-            $pagina = $cliente->obtener('/configurar-segundo-factor');
+            $sinEnlace = $cliente->obtener('/configurar-segundo-factor');
+            MarcoPruebas::afirmar(str_contains($sinEnlace['cuerpo'], 'Enviarme un enlace nuevo') && !str_contains($sinEnlace['cuerpo'], 'clave-secreta'), 'R-02: con la contraseña sola no se muestra ninguna clave');
+
+            $pagina = $abrirEnlace($cliente, '/configurar-segundo-factor', (string) $tokenEnrolamientoPrincipal);
             MarcoPruebas::afirmarIgual(200, $pagina['codigo'], 'Instrucciones');
             MarcoPruebas::afirmar(preg_match('#<code class="clave-secreta">([A-Z2-7 ]+)</code>#', $pagina['cuerpo'], $coincidencia) === 1, 'Muestra la clave para la aplicación');
             $secretoPrincipal = str_replace(' ', '', $coincidencia[1]);
@@ -202,6 +207,8 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos, array 
             MarcoPruebas::afirmarIgual('/solicitud-recibida', $obtenerUbicacion($respuesta), 'Redirige a la confirmación');
             $confirmacion = $nuevoCliente()->obtener('/solicitud-recibida');
             MarcoPruebas::afirmar(str_contains($confirmacion['cuerpo'], 'Si los datos permiten continuar el trámite'), 'Mensaje neutral');
+            MarcoPruebas::afirmar(str_contains($confirmacion['cuerpo'], 'Si recibe un mensaje con un enlace') && !str_contains($confirmacion['cuerpo'], 'que le enviamos'), 'R-07: instrucciones condicionales, sin afirmar que se envió');
+            MarcoPruebas::afirmar(str_contains($confirmacion['cuerpo'], 'modo de demostración'), 'R-07: avisa que los mensajes quedan en el buzón de pruebas');
             $repetida = $solicitarPorHttp('Ana', 'Alumna', 'paula@http.mx', 'ALUMNO', 'A3009');
             MarcoPruebas::afirmarIgual('/solicitud-recibida', $obtenerUbicacion($repetida), 'Misma respuesta con un correo que ya tiene cuenta (sin enumeración)');
             MarcoPruebas::afirmarIgual(null, $baseDatos->obtenerFilaSolicitud('paula@http.mx'), 'Y no se crea solicitud');

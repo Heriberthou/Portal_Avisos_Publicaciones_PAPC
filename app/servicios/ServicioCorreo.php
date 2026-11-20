@@ -131,6 +131,42 @@ final class ServicioCorreo
     }
 
     /**
+     * Enlace que autoriza configurar el segundo factor (hallazgo R-02).
+     *
+     * @param string $correo Destinatario (correo de la cuenta).
+     * @param string $nombre Nombre de la persona.
+     * @param string $token Token de enrolamiento en claro.
+     * @return bool true si se entregó al canal configurado.
+     */
+    public function enviarEnlaceEnrolamiento(string $correo, string $nombre, string $token): bool
+    {
+        $enlace = $this->construirEnlace('/configurar-segundo-factor', $token);
+        if ($enlace === null) {
+            return false;
+        }
+        return $this->enviar($correo, 'Configure su segundo factor del PAPC', <<<TEXTO
+            Hola, {$nombre}:
+
+            Su cuenta del PAPC tiene funciones administrativas. Para usarlas debe configurar un segundo factor
+            (una aplicación de autenticación en su teléfono). Abra este enlace en el navegador donde iniciará sesión:
+
+            {$enlace}
+
+            El enlace funciona una sola vez y vence en 1 hora. Si usted no esperaba este mensaje, no lo abra y
+            avise de inmediato al administrador principal: alguien podría conocer su contraseña.
+            TEXTO);
+    }
+
+    /**
+     * @return bool true si los mensajes NO se envían por correo y solo quedan
+     *              en el buzón de pruebas del servidor (hallazgo R-07).
+     */
+    public function esModoBuzonPruebas(): bool
+    {
+        return $this->modo === self::MODO_BUZON_PRUEBAS;
+    }
+
+    /**
      * Respuesta a una solicitud repetida o con correo ya registrado. Se envía
      * al buzón (no se muestra en pantalla) para no revelar si existe cuenta.
      *

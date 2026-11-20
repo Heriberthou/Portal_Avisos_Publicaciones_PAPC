@@ -59,8 +59,9 @@ final class ServicioAutenticacion
         if (!GestorContrasenas::verificar($contrasena, $hashAlmacenado)) {
             return null;
         }
-        if ($usuario['estado_cuenta_usuario'] !== UsuarioModel::ESTADO_ACTIVA) {
-            // Contraseña correcta pero cuenta no habilitada: respuesta pública idéntica.
+        if (!UsuarioModel::puedeIniciarSesion($usuario)) {
+            // Contraseña correcta pero cuenta no habilitada (o sin validación
+            // institucional registrada, R-03): respuesta pública idéntica.
             return null;
         }
 
@@ -93,14 +94,16 @@ final class ServicioAutenticacion
     {
         $huellaCorreo = $this->limitadorIntentos->calcularHuella($correoNormalizado);
 
-        if (!$this->limitadorIntentos->verificarLimiteIntentos($correoNormalizado, $origen)) {
+        // El intento se reserva ANTES de comprobar la contraseña (R-06).
+        $reserva = $this->limitadorIntentos->reservarIntento(LimitadorIntentos::AMBITO_LOGIN, $correoNormalizado, $origen, MAX_INTENTOS_LOGIN, MAX_INTENTOS_LOGIN_ORIGEN);
+        if ($reserva === null) {
             $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_LOGIN_BLOQUEADO, 'usuario', null, ['huellaCorreo' => $huellaCorreo]);
             return self::RESULTADO_LIMITE_ALCANZADO;
         }
 
         $usuario = $this->verificarCredenciales($correoNormalizado, $contrasena);
         if ($usuario === null) {
-            $this->limitadorIntentos->registrarIntentoFallido($correoNormalizado, $origen);
+            // La reserva queda registrada como intento fallido.
             $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_LOGIN_FALLIDO, 'usuario', null, ['huellaCorreo' => $huellaCorreo]);
             return self::RESULTADO_CREDENCIALES_INVALIDAS;
         }

@@ -20,11 +20,13 @@ final class SolicitudAccesoController
      * @param ServicioSolicitudAcceso $servicioSolicitudAcceso Reglas de solicitud.
      * @param GestorSesion $gestorSesion Mensajes y token del enlace.
      * @param AuditoriaModel $auditoriaModel Registro de manipulaciones.
+     * @param ServicioCorreo $servicioCorreo Para indicar si el sitio está en modo de demostración (R-07).
      */
     public function __construct(
         private readonly ServicioSolicitudAcceso $servicioSolicitudAcceso,
         private readonly GestorSesion $gestorSesion,
-        private readonly AuditoriaModel $auditoriaModel
+        private readonly AuditoriaModel $auditoriaModel,
+        private readonly ServicioCorreo $servicioCorreo
     ) {
     }
 
@@ -93,8 +95,9 @@ final class SolicitudAccesoController
     public function mostrarSolicitudRecibida(?array $usuarioActual, array $datosFormulario): Respuesta
     {
         return Respuesta::vista('solicitud-recibida', [
-            'tituloPagina' => 'Solicitud recibida',
-            'mensajes'     => $this->gestorSesion->extraerMensajesFlash(),
+            'tituloPagina'     => 'Solicitud recibida',
+            'mensajes'         => $this->gestorSesion->extraerMensajesFlash(),
+            'modoBuzonPruebas' => $this->servicioCorreo->esModoBuzonPruebas(),
         ]);
     }
 

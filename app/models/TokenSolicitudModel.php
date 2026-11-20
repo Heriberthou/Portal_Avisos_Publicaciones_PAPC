@@ -28,17 +28,36 @@ final class TokenSolicitudModel
      */
     public function crearToken(int $idSolicitud, string $hashToken, int $vigenciaSegundos): void
     {
-        $sentenciaInvalidar = $this->conexion->prepare(
-            'UPDATE token_solicitud SET fecha_consumo_token_solicitud = NOW()
-             WHERE id_solicitud_acceso_destinataria = :idSolicitud AND fecha_consumo_token_solicitud IS NULL'
-        );
-        $sentenciaInvalidar->execute(['idSolicitud' => $idSolicitud]);
+        // R-04: bloquear la solicitud y emitir en una sola transacción.
+        $transaccionPropia = !$this->conexion->inTransaction();
+        if ($transaccionPropia) {
+            $this->conexion->beginTransaction();
+        }
+        try {
+            $bloqueo = $this->conexion->prepare('SELECT id_solicitud_acceso FROM solicitud_acceso WHERE id_solicitud_acceso = :idSolicitud FOR UPDATE');
+            $bloqueo->execute(['idSolicitud' => $idSolicitud]);
+            $bloqueo->fetchAll();
 
-        $sentencia = $this->conexion->prepare(
-            'INSERT INTO token_solicitud (id_solicitud_acceso_destinataria, hash_token_solicitud, fecha_expiracion_token_solicitud)
-             VALUES (:idSolicitud, :hashToken, NOW() + INTERVAL :vigencia SECOND)'
-        );
-        $sentencia->execute(['idSolicitud' => $idSolicitud, 'hashToken' => $hashToken, 'vigencia' => $vigenciaSegundos]);
+            $sentenciaInvalidar = $this->conexion->prepare(
+                'UPDATE token_solicitud SET fecha_consumo_token_solicitud = NOW()
+                 WHERE id_solicitud_acceso_destinataria = :idSolicitud AND fecha_consumo_token_solicitud IS NULL'
+            );
+            $sentenciaInvalidar->execute(['idSolicitud' => $idSolicitud]);
+
+            $sentencia = $this->conexion->prepare(
+                'INSERT INTO token_solicitud (id_solicitud_acceso_destinataria, hash_token_solicitud, fecha_expiracion_token_solicitud)
+                 VALUES (:idSolicitud, :hashToken, NOW() + INTERVAL :vigencia SECOND)'
+            );
+            $sentencia->execute(['idSolicitud' => $idSolicitud, 'hashToken' => $hashToken, 'vigencia' => $vigenciaSegundos]);
+            if ($transaccionPropia) {
+                $this->conexion->commit();
+            }
+        } catch (Throwable $excepcion) {
+            if ($transaccionPropia && $this->conexion->inTransaction()) {
+                $this->conexion->rollBack();
+            }
+            throw $excepcion;
+        }
     }
 
     /**

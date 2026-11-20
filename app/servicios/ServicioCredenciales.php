@@ -100,10 +100,10 @@ final class ServicioCredenciales
      */
     public function solicitarRecuperacion(string $correo, string $origen): string
     {
-        if (!$this->limitadorIntentos->verificarLimiteAmbito(self::AMBITO_LIMITE, $correo, $origen, MAX_ENVIOS_FORMULARIO_CORREO, MAX_ENVIOS_FORMULARIO_ORIGEN)) {
+        // Se reserva el envío antes de procesarlo (R-06): cuenta aunque lleguen varios a la vez.
+        if ($this->limitadorIntentos->reservarIntento(self::AMBITO_LIMITE, $correo, $origen, MAX_ENVIOS_FORMULARIO_CORREO, MAX_ENVIOS_FORMULARIO_ORIGEN) === null) {
             return self::RESULTADO_LIMITE_ALCANZADO;
         }
-        $this->limitadorIntentos->registrarIntentoAmbito(self::AMBITO_LIMITE, $correo, $origen);
 
         $usuario = $this->usuarioModel->obtenerUsuarioPorCorreo($correo);
         $estado = $usuario['estado_cuenta_usuario'] ?? null;
@@ -176,8 +176,16 @@ final class ServicioCredenciales
                 $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_ENLACE_INVALIDO, 'token_cuenta', null, ['finalidad' => $finalidad]);
                 return ['resultado' => self::RESULTADO_ENLACE_INVALIDO, 'error' => null];
             }
-            // Cualquier otro enlace pendiente de la cuenta deja de servir.
-            $this->tokenCuentaModel->invalidarTokens($idUsuario);
+            // Los demás enlaces de contraseña pendientes dejan de servir. Al
+            // ACTIVAR se conserva el de configurar el segundo factor (la
+            // consola entrega ambos al primer principal); al RESTABLECER se
+            // invalida todo y, si hace falta, la persona pide otro.
+            if ($finalidad === TokenCuentaModel::FINALIDAD_ACTIVACION) {
+                $this->tokenCuentaModel->invalidarTokens($idUsuario, TokenCuentaModel::FINALIDAD_ACTIVACION);
+                $this->tokenCuentaModel->invalidarTokens($idUsuario, TokenCuentaModel::FINALIDAD_RECUPERACION);
+            } else {
+                $this->tokenCuentaModel->invalidarTokens($idUsuario);
+            }
             $this->auditoriaModel->registrarEventoAuditoria(
                 $idUsuario,
                 $finalidad === TokenCuentaModel::FINALIDAD_ACTIVACION ? AuditoriaModel::ACCION_CUENTA_ACTIVADA : AuditoriaModel::ACCION_CONTRASENA_RESTABLECIDA,

@@ -51,6 +51,12 @@ const MAX_ENVIOS_FORMULARIO_ORIGEN = 30;
 /** Códigos de segundo factor fallidos permitidos por cuenta en la ventana. */
 const MAX_INTENTOS_SEGUNDO_FACTOR = 5;
 
+/**
+ * Confirmaciones de contraseña fallidas permitidas por administrador en la
+ * ventana (cambiar rol, estado o segundo factor; hallazgo R-05).
+ */
+const MAX_INTENTOS_REAUTENTICACION = 5;
+
 /* ------------------- Enlaces de un solo uso (tokens) --------------- */
 /* Políticas propuestas en la especificación 1.3; son revisables. */
 
@@ -62,6 +68,13 @@ const VIGENCIA_TOKEN_ACTIVACION_SEGUNDOS = 86400;
 
 /** Vigencia del enlace de recuperación de contraseña (30 min). */
 const VIGENCIA_TOKEN_RECUPERACION_SEGUNDOS = 1800;
+
+/**
+ * Vigencia del enlace que autoriza configurar el segundo factor (1 h).
+ * Es breve a propósito (hallazgo R-02); si vence, la persona pide otro
+ * desde la pantalla de configuración y le llega a su correo.
+ */
+const VIGENCIA_TOKEN_ENROLAMIENTO_MFA_SEGUNDOS = 3600;
 
 /* -------------------------- Segundo factor ------------------------- */
 

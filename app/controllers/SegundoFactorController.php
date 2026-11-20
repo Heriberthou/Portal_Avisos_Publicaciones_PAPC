@@ -74,11 +74,53 @@ final class SegundoFactorController
      */
     public function mostrarConfiguracion(?array $usuarioActual, array $datosFormulario): Respuesta
     {
+        // Enlace del correo o de la consola: se guarda en la sesión y se
+        // redirige a la URL sin token (R-02).
+        if (array_key_exists('token', $datosFormulario)) {
+            if (GeneradorTokens::esFormatoValido($datosFormulario['token'])) {
+                $this->gestorSesion->guardarTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO, (string) $datosFormulario['token']);
+            }
+            return Respuesta::redireccion('/configurar-segundo-factor');
+        }
+        if ($this->servicioSegundoFactor->obtenerCuentaPendiente() === null) {
+            $mensaje = $this->gestorSesion->obtenerTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO) !== null
+                ? 'Inicie sesión para continuar con la configuración de su segundo factor.'
+                : self::MENSAJE_SIN_PENDIENTE;
+            return $this->redirigirConMensaje('/iniciar-sesion', 'aviso', $mensaje);
+        }
         $configuracion = $this->servicioSegundoFactor->prepararConfiguracion();
         if ($configuracion === null) {
-            return $this->redirigirConMensaje('/iniciar-sesion', 'aviso', self::MENSAJE_SIN_PENDIENTE);
+            return $this->vistaEnlacePendiente(null, 200);
         }
         return $this->vistaConfiguracion($configuracion, null, 200);
+    }
+
+    /**
+     * POST /configurar-segundo-factor/enlace — envía el enlace de
+     * configuración al correo de la cuenta cuya contraseña ya se validó.
+     *
+     * @param array<string, mixed>|null $usuarioActual Siempre null.
+     * @param array<mixed> $datosFormulario Solo token_csrf.
+     * @return Respuesta Pantalla con el resultado.
+     */
+    public function solicitarEnlace(?array $usuarioActual, array $datosFormulario): Respuesta
+    {
+        $this->exigirCamposPermitidos($datosFormulario, ['token_csrf'], 'enlace-segundo-factor');
+        return match ($this->servicioSegundoFactor->solicitarEnlaceEnrolamiento(Solicitud::obtenerOrigen())) {
+            ServicioSegundoFactor::RESULTADO_ENLACE_ENVIADO => $this->vistaEnlacePendiente(
+                'Le enviamos un enlace nuevo. Ábralo en este navegador; vence en 1 hora.',
+                200
+            ),
+            ServicioSegundoFactor::RESULTADO_ENVIO_FALLIDO => $this->vistaEnlacePendiente(
+                'No fue posible enviar el enlace. Intente más tarde o comuníquese con el administrador principal.',
+                503
+            ),
+            ServicioSegundoFactor::RESULTADO_LIMITE_ALCANZADO => $this->vistaEnlacePendiente(
+                'Por seguridad, espere unos minutos antes de pedir otro enlace.',
+                429
+            ),
+            default => $this->redirigirConMensaje('/iniciar-sesion', 'aviso', self::MENSAJE_SIN_PENDIENTE),
+        };
     }
 
     /**
@@ -97,6 +139,9 @@ final class SegundoFactorController
         if ($resultado['resultado'] === ServicioSegundoFactor::RESULTADO_EXITO) {
             $this->gestorSesion->guardarDatoUnaVez('codigosRecuperacion', $resultado['codigosRecuperacion']);
             return Respuesta::redireccion('/codigos-recuperacion');
+        }
+        if ($resultado['resultado'] === ServicioSegundoFactor::RESULTADO_SIN_AUTORIZACION) {
+            return $this->vistaEnlacePendiente(null, 403);
         }
         if ($resultado['resultado'] === ServicioSegundoFactor::RESULTADO_CODIGO_INVALIDO) {
             $configuracion = $this->servicioSegundoFactor->prepararConfiguracion();
@@ -139,6 +184,22 @@ final class SegundoFactorController
             'tituloPagina' => 'Verificar segundo factor',
             'mensajes'     => $this->gestorSesion->extraerMensajesFlash(),
             'mensajeError' => $mensajeError,
+        ], $codigoEstado);
+    }
+
+    /**
+     * Pantalla "Revise su correo": falta abrir el enlace de configuración.
+     *
+     * @param string|null $mensaje Resultado de la última acción.
+     * @param int $codigoEstado Código HTTP.
+     * @return Respuesta Vista.
+     */
+    private function vistaEnlacePendiente(?string $mensaje, int $codigoEstado): Respuesta
+    {
+        return Respuesta::vista('enlace-segundo-factor', [
+            'tituloPagina' => 'Configurar segundo factor',
+            'mensajes'     => $this->gestorSesion->extraerMensajesFlash(),
+            'mensaje'      => $mensaje,
         ], $codigoEstado);
     }
 

@@ -21,6 +21,7 @@ $textosEstado = [
 <section class="tarjeta-amplia">
     <?php require RUTA_RAIZ . '/app/views/parciales/navegacion-admin.php'; ?>
     <h1>Cuentas</h1>
+    <p class="texto-secundario">Las cuentas creadas con el registro anterior quedaron suspendidas hasta que un administrador valide su pertenencia institucional ("Validar y reactivar").</p>
     <p class="texto-secundario">Las cuentas nuevas solo se crean al aprobar una solicitud. Suspender o dar de baja cierra de inmediato las sesiones de la cuenta. Dar de baja es definitivo.</p>
 
     <div class="contenedor-tabla">
@@ -38,6 +39,7 @@ $textosEstado = [
             $puedeGestionar = $idUsuarioFila !== $idUsuarioActual
                 && ($datosVista['esPrincipal'] || $usuarioFila['rol_usuario'] === UsuarioModel::ROL_USUARIO);
             $transiciones = ServicioAdministracionUsuarios::obtenerTransicionesPermitidas((string) $usuarioFila['estado_cuenta_usuario']);
+            $esHeredadaPendiente = UsuarioModel::esCuentaHeredadaPendiente($usuarioFila);
             ?>
             <tr>
                 <td><?= $idUsuarioFila ?></td>
@@ -50,7 +52,12 @@ $textosEstado = [
                 <td><?= Vista::escapar($usuarioFila['correo_electronico_usuario']) ?></td>
                 <td><?= Vista::escapar($usuarioFila['tipo_integrante_usuario'] ?? 'Sin clasificar') ?></td>
                 <td><?= Vista::escapar($usuarioFila['rol_usuario']) ?></td>
-                <td><span class="etiqueta-estado estado-<?= Vista::escapar(strtolower($usuarioFila['estado_cuenta_usuario'])) ?>"><?= Vista::escapar($usuarioFila['estado_cuenta_usuario']) ?></span></td>
+                <td>
+                    <span class="etiqueta-estado estado-<?= Vista::escapar(strtolower($usuarioFila['estado_cuenta_usuario'])) ?>"><?= Vista::escapar($usuarioFila['estado_cuenta_usuario']) ?></span>
+                    <?php if ($esHeredadaPendiente): ?>
+                        <br><small class="texto-secundario">Cuenta anterior pendiente de validación institucional</small>
+                    <?php endif; ?>
+                </td>
                 <td class="celda-acciones">
                     <?php if ($puedeGestionar && $transiciones !== []): ?>
                         <form method="post" action="<?= Vista::escapar(Vista::url('/admin/usuarios/estado')) ?>" class="formulario-en-linea">
@@ -59,7 +66,7 @@ $textosEstado = [
                             <label class="etiqueta-oculta" for="estado-nuevo-<?= $idUsuarioFila ?>">Nuevo estado</label>
                             <select id="estado-nuevo-<?= $idUsuarioFila ?>" name="estado_nuevo">
                                 <?php foreach ($transiciones as $estadoDestino): ?>
-                                    <option value="<?= Vista::escapar($estadoDestino) ?>"><?= Vista::escapar($textosEstado[$estadoDestino] ?? $estadoDestino) ?></option>
+                                    <option value="<?= Vista::escapar($estadoDestino) ?>"><?= Vista::escapar($esHeredadaPendiente && $estadoDestino === UsuarioModel::ESTADO_ACTIVA ? 'Validar y reactivar' : ($textosEstado[$estadoDestino] ?? $estadoDestino)) ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <label class="etiqueta-oculta" for="confirmacion-estado-<?= $idUsuarioFila ?>">Su contraseña</label>

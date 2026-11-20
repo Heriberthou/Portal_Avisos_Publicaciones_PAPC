@@ -30,7 +30,9 @@ final class GestorSesion
     public const ENLACE_VERIFICACION = 'verificacion';
     public const ENLACE_ACTIVACION = 'activacion';
     public const ENLACE_RECUPERACION = 'recuperacion';
-    private const ENLACES_VALIDOS = [self::ENLACE_VERIFICACION, self::ENLACE_ACTIVACION, self::ENLACE_RECUPERACION];
+    /** Enlace que autoriza configurar el segundo factor (R-02). */
+    public const ENLACE_ENROLAMIENTO = 'enrolamiento';
+    private const ENLACES_VALIDOS = [self::ENLACE_VERIFICACION, self::ENLACE_ACTIVACION, self::ENLACE_RECUPERACION, self::ENLACE_ENROLAMIENTO];
 
     /** Motivo de la última expiración detectada por validarSesion(). */
     private ?string $motivoUltimaExpiracion = null;
@@ -168,7 +170,7 @@ final class GestorSesion
                 $motivoExpiracion = self::MOTIVO_CUENTA_INEXISTENTE;
             } elseif ((int) $usuario['version_sesion_usuario'] !== (int) ($_SESSION['versionSesion'] ?? -1)) {
                 $motivoExpiracion = self::MOTIVO_VERSION_CAMBIADA;
-            } elseif ($usuario['estado_cuenta_usuario'] !== UsuarioModel::ESTADO_ACTIVA) {
+            } elseif (!UsuarioModel::puedeIniciarSesion($usuario)) {
                 // INVITADA, SUSPENDIDA o BAJA: no mantienen sesión (RF-08).
                 $motivoExpiracion = self::MOTIVO_CUENTA_NO_ACTIVA;
             } elseif (in_array($usuario['rol_usuario'], UsuarioModel::ROLES_CON_SEGUNDO_FACTOR, true)
@@ -316,7 +318,13 @@ final class GestorSesion
     {
         self::iniciarSesionPhp();
         session_regenerate_id(true);
+        // Se conserva solo el enlace de enrolamiento, por si la persona lo abrió
+        // antes de escribir su contraseña en este mismo navegador.
+        $tokenEnrolamiento = $_SESSION['tokensEnlace'][self::ENLACE_ENROLAMIENTO] ?? null;
         $_SESSION = [];
+        if (GeneradorTokens::esFormatoValido($tokenEnrolamiento)) {
+            $_SESSION['tokensEnlace'][self::ENLACE_ENROLAMIENTO] = $tokenEnrolamiento;
+        }
         $_SESSION['segundoFactorPendiente'] = [
             'idUsuario'     => (int) $usuario['id_usuario'],
             'versionSesion' => (int) $usuario['version_sesion_usuario'],

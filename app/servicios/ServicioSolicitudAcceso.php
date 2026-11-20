@@ -66,13 +66,13 @@ final class ServicioSolicitudAcceso
     public function registrarSolicitud(array $datosSolicitud, string $origen): string
     {
         $correo = $datosSolicitud['correo'];
-        if (!$this->limitadorIntentos->verificarLimiteAmbito(self::AMBITO_LIMITE, $correo, $origen, MAX_ENVIOS_FORMULARIO_CORREO, MAX_ENVIOS_FORMULARIO_ORIGEN)) {
+        // Se reserva el envío antes de procesarlo (R-06): cuenta aunque lleguen varios a la vez.
+        if ($this->limitadorIntentos->reservarIntento(self::AMBITO_LIMITE, $correo, $origen, MAX_ENVIOS_FORMULARIO_CORREO, MAX_ENVIOS_FORMULARIO_ORIGEN) === null) {
             $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_SOLICITUD_LIMITADA, 'solicitud_acceso', null, [
                 'huellaCorreo' => $this->limitadorIntentos->calcularHuella($correo),
             ]);
             return self::RESULTADO_LIMITE_ALCANZADO;
         }
-        $this->limitadorIntentos->registrarIntentoAmbito(self::AMBITO_LIMITE, $correo, $origen);
 
         if ($this->usuarioModel->existeCorreo($correo)) {
             $this->atenderSolicitudRepetida($correo, null, 'CUENTA_EXISTENTE');
@@ -113,10 +113,10 @@ final class ServicioSolicitudAcceso
      */
     public function reenviarVerificacion(string $correo, string $origen): string
     {
-        if (!$this->limitadorIntentos->verificarLimiteAmbito(self::AMBITO_LIMITE, $correo, $origen, MAX_ENVIOS_FORMULARIO_CORREO, MAX_ENVIOS_FORMULARIO_ORIGEN)) {
+        // Se reserva el envío antes de procesarlo (R-06): cuenta aunque lleguen varios a la vez.
+        if ($this->limitadorIntentos->reservarIntento(self::AMBITO_LIMITE, $correo, $origen, MAX_ENVIOS_FORMULARIO_CORREO, MAX_ENVIOS_FORMULARIO_ORIGEN) === null) {
             return self::RESULTADO_LIMITE_ALCANZADO;
         }
-        $this->limitadorIntentos->registrarIntentoAmbito(self::AMBITO_LIMITE, $correo, $origen);
 
         $solicitud = $this->solicitudAccesoModel->obtenerUltimaSolicitudPorCorreo($correo);
         if ($solicitud !== null && $solicitud['estado_solicitud'] === SolicitudAccesoModel::ESTADO_PENDIENTE
@@ -230,7 +230,9 @@ final class ServicioSolicitudAcceso
             $this->auditoriaModel->registrarEventoAuditoria($idActor, AuditoriaModel::ACCION_ENVIO_CORREO_FALLIDO, 'usuario', $idUsuarioCreado, ['tipoCorreo' => 'INVITACION']);
             return $this->resultado(true, 'Solicitud aprobada. El envío de la invitación está pendiente; reintente desde la administración de solicitudes.');
         }
-        return $this->resultado(true, 'Solicitud aprobada. Se generó una invitación de activación.');
+        return $this->resultado(true, $this->servicioCorreo->esModoBuzonPruebas()
+            ? 'Solicitud aprobada. Se generó una invitación de activación; quedó en el buzón de pruebas del servidor (no se envió por correo).'
+            : 'Solicitud aprobada. Se generó una invitación de activación y se entregó al servicio de correo.');
     }
 
     /**
@@ -315,7 +317,9 @@ final class ServicioSolicitudAcceso
             $this->auditoriaModel->registrarEventoAuditoria($idActor, AuditoriaModel::ACCION_ENVIO_CORREO_FALLIDO, 'usuario', $idUsuario, ['tipoCorreo' => 'INVITACION']);
             return $this->resultado(false, 'Se generó un enlace nuevo, pero el envío sigue pendiente. Intente de nuevo más tarde.');
         }
-        return $this->resultado(true, 'Se generó y envió una invitación nueva. El enlace anterior dejó de funcionar.');
+        return $this->resultado(true, $this->servicioCorreo->esModoBuzonPruebas()
+            ? 'Se generó una invitación nueva; quedó en el buzón de pruebas del servidor. El enlace anterior dejó de funcionar.'
+            : 'Se generó una invitación nueva y se entregó al servicio de correo. El enlace anterior dejó de funcionar.');
     }
 
     /**

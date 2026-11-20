@@ -48,6 +48,7 @@ return static function (Enrutador $enrutador, array $dependencias): void {
     $enrutador->agregarRuta('POST', '/verificar-segundo-factor', [$segundoFactor, 'procesarVerificacion'], Enrutador::ACCESO_SOLO_INVITADO);
     $enrutador->agregarRuta('GET', '/configurar-segundo-factor', [$segundoFactor, 'mostrarConfiguracion'], Enrutador::ACCESO_SOLO_INVITADO);
     $enrutador->agregarRuta('POST', '/configurar-segundo-factor', [$segundoFactor, 'procesarConfiguracion'], Enrutador::ACCESO_SOLO_INVITADO);
+    $enrutador->agregarRuta('POST', '/configurar-segundo-factor/enlace', [$segundoFactor, 'solicitarEnlace'], Enrutador::ACCESO_SOLO_INVITADO);
     $enrutador->agregarRuta('GET', '/codigos-recuperacion', [$segundoFactor, 'mostrarCodigosRecuperacion'], Enrutador::ACCESO_AUTENTICADO);
 
     // Pantallas C y D: solicitar acceso y verificar el correo.

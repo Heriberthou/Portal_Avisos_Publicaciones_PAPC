@@ -40,4 +40,10 @@ try {
 }
 
 fwrite($resultado['exito'] ? STDOUT : STDERR, $resultado['mensaje'] . "\n");
+if ($resultado['tokenEnrolamiento'] !== null) {
+    $enlace = $dependencias['servicioCorreo']->construirEnlace('/configurar-segundo-factor', $resultado['tokenEnrolamiento']);
+    fwrite(STDOUT, $enlace !== null
+        ? "Entregue este enlace SOLO a la persona titular, después de comprobar su identidad (un solo uso, vence en 1 h):\n{$enlace}\n"
+        : "Configure APP_URL_PUBLICA en el .env para obtener el enlace.\n");
+}
 exit($resultado['exito'] ? 0 : 1);

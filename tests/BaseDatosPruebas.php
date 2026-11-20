@@ -66,6 +66,7 @@ final class BaseDatosPruebas
             'database/migraciones/002-intento-acceso.sql',
             'database/migraciones/003-nombre-atomico-usuario.sql',
             'database/migraciones/004-solicitud-acceso-activacion.sql',
+            'database/migraciones/005-transicion-cuentas-y-enrolamiento.sql',
         ] as $archivoSql) {
             $this->conexionAdministrativa->exec((string) file_get_contents(RUTA_RAIZ . '/' . $archivoSql));
         }

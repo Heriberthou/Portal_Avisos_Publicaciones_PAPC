@@ -29,6 +29,30 @@ final class UsuarioModel
     public const ESTADO_BAJA = 'BAJA';
     public const ESTADOS_CUENTA = [self::ESTADO_INVITADA, self::ESTADO_ACTIVA, self::ESTADO_SUSPENDIDA, self::ESTADO_BAJA];
 
+    /**
+     * Una cuenta puede iniciar sesión solo si está ACTIVA y tiene registrada
+     * su validación institucional (hallazgo R-03: las cuentas heredadas del
+     * registro abierto no la tienen hasta que un administrador las revisa).
+     *
+     * @param array<string, mixed> $usuario Fila de usuario.
+     * @return bool true si puede usarse.
+     */
+    public static function puedeIniciarSesion(array $usuario): bool
+    {
+        return ($usuario['estado_cuenta_usuario'] ?? null) === self::ESTADO_ACTIVA
+            && ($usuario['fecha_validacion_institucional_usuario'] ?? null) !== null;
+    }
+
+    /**
+     * @param array<string, mixed> $usuario Fila de usuario.
+     * @return bool true si es una cuenta heredada pendiente de validación institucional.
+     */
+    public static function esCuentaHeredadaPendiente(array $usuario): bool
+    {
+        return ($usuario['estado_cuenta_usuario'] ?? null) === self::ESTADO_SUSPENDIDA
+            && ($usuario['fecha_validacion_institucional_usuario'] ?? null) === null;
+    }
+
     /** Roles que exigen segundo factor antes de abrir la sesión. */
     public const ROLES_CON_SEGUNDO_FACTOR = [self::ROL_ADMINISTRADOR, self::ROL_ADMINISTRADOR_PRINCIPAL];
 
@@ -418,11 +442,46 @@ final class UsuarioModel
      */
     public function contarOtrosPrincipalesActivos(int $idUsuarioExcluido): int
     {
+        // Lectura con bloqueo: dentro de la transacción cuenta lo último
+        // confirmado, no una instantánea anterior (hallazgo R-01).
         $sentencia = $this->conexion->prepare(
             "SELECT COUNT(*) FROM usuario WHERE rol_usuario = 'ADMINISTRADOR_PRINCIPAL'
-               AND estado_cuenta_usuario = 'ACTIVA' AND id_usuario <> :idUsuario"
+               AND estado_cuenta_usuario = 'ACTIVA' AND fecha_validacion_institucional_usuario IS NOT NULL
+               AND id_usuario <> :idUsuario FOR UPDATE"
         );
         $sentencia->execute(['idUsuario' => $idUsuarioExcluido]);
         return (int) $sentencia->fetchColumn();
+    }
+
+    /**
+     * Principales vigentes: ACTIVOS o INVITADOS pendientes de activar
+     * (lectura con bloqueo). Si hay alguno, la consola no crea otro (AC-27).
+     *
+     * @return int Principales que pueden usarse o están por activarse.
+     */
+    public function contarPrincipalesVigentes(): int
+    {
+        return (int) $this->conexion->query(
+            "SELECT COUNT(*) FROM usuario WHERE rol_usuario = 'ADMINISTRADOR_PRINCIPAL'
+               AND estado_cuenta_usuario IN ('ACTIVA', 'INVITADA') AND fecha_validacion_institucional_usuario IS NOT NULL FOR UPDATE"
+        )->fetchColumn();
+    }
+
+    /**
+     * Registra la validación institucional de una cuenta heredada (R-03).
+     * Solo aplica si aún no tenía una.
+     *
+     * @param int $idUsuario Cuenta.
+     * @param int|null $idUsuarioAutorizador Administrador que validó (null = consola).
+     * @return bool true si se registró.
+     */
+    public function registrarValidacionInstitucional(int $idUsuario, ?int $idUsuarioAutorizador): bool
+    {
+        $sentencia = $this->conexion->prepare(
+            'UPDATE usuario SET fecha_validacion_institucional_usuario = NOW(), id_usuario_autorizador = :idAutorizador
+             WHERE id_usuario = :idUsuario AND fecha_validacion_institucional_usuario IS NULL'
+        );
+        $sentencia->execute(['idAutorizador' => $idUsuarioAutorizador, 'idUsuario' => $idUsuario]);
+        return $sentencia->rowCount() === 1;
     }
 }

@@ -34,6 +34,30 @@ final class IntentoAccesoModel
     }
 
     /**
+     * Inserta un intento ANTES de comprobar la credencial (reserva de cupo,
+     * hallazgo R-06) y devuelve su id para poder retirarlo después.
+     *
+     * @param string $huellaCorreo HMAC del identificador.
+     * @param string $huellaOrigen HMAC de la IP.
+     * @return int Id del intento reservado.
+     */
+    public function reservarIntento(string $huellaCorreo, string $huellaOrigen): int
+    {
+        $this->registrarIntentoFallido($huellaCorreo, $huellaOrigen);
+        return (int) $this->conexion->lastInsertId();
+    }
+
+    /**
+     * @param int $idIntento Intento reservado que no debe contar.
+     * @return void
+     */
+    public function eliminarIntento(int $idIntento): void
+    {
+        $sentencia = $this->conexion->prepare('DELETE FROM intento_acceso WHERE id_intento_acceso = :idIntento');
+        $sentencia->execute(['idIntento' => $idIntento]);
+    }
+
+    /**
      * @param string $huellaCorreo HMAC del correo.
      * @param int $ventanaSegundos Antigüedad máxima considerada.
      * @return int Intentos fallidos recientes contra esa cuenta.

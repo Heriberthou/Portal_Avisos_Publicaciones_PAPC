@@ -41,10 +41,10 @@ final class Aplicacion
         $cifradorSecretos = new CifradorSecretos($claveHuellas);
 
         $servicioAutenticacion = new ServicioAutenticacion($usuarioModel, $auditoriaModel, $limitadorIntentos, $gestorSesion);
-        $servicioSegundoFactor = new ServicioSegundoFactor($conexion, $usuarioModel, $codigoRecuperacionModel, $auditoriaModel, $limitadorIntentos, $gestorSesion, $cifradorSecretos);
+        $servicioSegundoFactor = new ServicioSegundoFactor($conexion, $usuarioModel, $codigoRecuperacionModel, $tokenCuentaModel, $auditoriaModel, $limitadorIntentos, $gestorSesion, $cifradorSecretos, $servicioCorreo);
         $servicioSolicitudAcceso = new ServicioSolicitudAcceso($conexion, $solicitudAccesoModel, $tokenSolicitudModel, $usuarioModel, $tokenCuentaModel, $auditoriaModel, $limitadorIntentos, $servicioCorreo, $roleMiddleware);
         $servicioCredenciales = new ServicioCredenciales($conexion, $usuarioModel, $tokenCuentaModel, $auditoriaModel, $limitadorIntentos, $servicioCorreo);
-        $servicioAdministracion = new ServicioAdministracionUsuarios($conexion, $usuarioModel, $auditoriaModel, $roleMiddleware, $tokenCuentaModel, $codigoRecuperacionModel);
+        $servicioAdministracion = new ServicioAdministracionUsuarios($conexion, $usuarioModel, $auditoriaModel, $roleMiddleware, $tokenCuentaModel, $codigoRecuperacionModel, $limitadorIntentos, $servicioSegundoFactor, $servicioCorreo);
 
         return [
             'usuarioModel'            => $usuarioModel,
@@ -63,7 +63,7 @@ final class Aplicacion
             'portalController'        => new PortalController($gestorSesion),
             'authController'          => new AuthController($servicioAutenticacion, $gestorSesion, $auditoriaModel, $roleMiddleware),
             'segundoFactorController' => new SegundoFactorController($servicioSegundoFactor, $gestorSesion),
-            'solicitudAccesoController' => new SolicitudAccesoController($servicioSolicitudAcceso, $gestorSesion, $auditoriaModel),
+            'solicitudAccesoController' => new SolicitudAccesoController($servicioSolicitudAcceso, $gestorSesion, $auditoriaModel, $servicioCorreo),
             'activacionController'    => new ActivacionController($servicioCredenciales, $gestorSesion),
             'recuperacionController'  => new RecuperacionController($servicioCredenciales, $gestorSesion),
             'administracionSolicitudesController' => new AdministracionSolicitudesController($servicioSolicitudAcceso, $solicitudAccesoModel, $usuarioModel, $gestorSesion),

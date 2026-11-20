@@ -18,9 +18,20 @@ riesgo, propuesta). Claude Code lo corrige y responde en el mismo archivo.
 
 ### Claude Code
 
-- **Tarea en curso:** ninguna. Se terminó la implementación de la especificación 1.3
-  (solicitud de acceso → verificación de correo → aprobación → cuenta INVITADA → activación →
-  login con segundo factor para administradores; recuperación, estados de cuenta, roles y bitácora).
+- **Tarea en curso:** ninguna.
+- **Tarea terminada (20/11/2026):** corrección de los hallazgos R-01 a R-08 de `docs/revision-codex.md`
+  (respondidos ahí; estado "Corregido; pendiente de verificación de Codex"). Pruebas 79/79.
+  - Archivos que se modifican: `app/servicios/` (`ServicioAdministracionUsuarios`, `ServicioSegundoFactor`,
+    `ServicioAutenticacion`, `ServicioSolicitudAcceso`, `ServicioCredenciales`, `LimitadorIntentos`,
+    `ServicioCorreo`), `app/models/` (`UsuarioModel`, `TokenCuentaModel`, `TokenSolicitudModel`,
+    `IntentoAccesoModel`), `app/nucleo/GestorSesion.php`, `app/controllers/` (`SegundoFactorController`,
+    `AdminUsuarioController`), `config/aplicacion.php`, `config/rutas.php`, vistas de segundo factor,
+    `solicitud-recibida.php` y `admin/usuarios.php`, `herramientas/`, `tests/`, `README.md`.
+  - **Base de datos:** nueva migración `005-transicion-cuentas-y-enrolamiento.sql` (y su reversión) y
+    precondición ejecutable en `004-...-revertir.sql`. La 004 no se edita. No se toca el servidor.
+  - Archivos nuevos: `database/migraciones/004-preparar-reversion.sql`, `app/views/enlace-segundo-factor.php`,
+    `tests/auxiliar-emision-concurrente.php`.
+- **Tarea anterior (terminada):** implementación de la especificación 1.3.
 - **Último commit:** `2cc8ddf` en `feature/diseno` (subido a `origin`). El commit anterior `0f223a6`
   ("Prueba?") contiene una versión intermedia del mismo trabajo.
 - **Archivos modificados en esa tarea** (ya confirmados, nada pendiente en el árbol de trabajo):
@@ -59,6 +70,7 @@ riesgo, propuesta). Claude Code lo corrige y responde en el mismo archivo.
 |---|---|---|
 | 001, 002, 003 | Confirmadas | Aplicadas |
 | 004 (solicitud de acceso, tokens, estados, segundo factor) | Confirmada en `2cc8ddf` | **No aplicada** (debe aplicarse antes del `git pull`) |
+| 005 (transición de cuentas heredadas y enlace de enrolamiento; R-02, R-03) | Nueva (20/11/2026) | **No aplicada** (después de la 004 y antes del `git pull`) |
 
 Regla: solo un agente crea o modifica migraciones a la vez, y ninguna migración ya aplicada en el
 servidor se edita; los cambios se hacen con una migración nueva numerada.

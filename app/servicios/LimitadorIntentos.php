@@ -51,6 +51,67 @@ final class LimitadorIntentos
         return hash_hmac('sha256', $valor, $this->claveHuellas);
     }
 
+    /** Ámbito del inicio de sesión: sin prefijo (compatible con los registros previos). */
+    public const AMBITO_LOGIN = '';
+
+    /**
+     * Reserva atómica de un intento (hallazgo R-06).
+     *
+     * Primero INSERTA el intento y después cuenta, incluyéndolo. Así, si
+     * llegan varias peticiones simultáneas, cada una ve las reservas de las
+     * demás que ya se registraron: nunca se comprueban más credenciales que
+     * el máximo configurado (en el peor caso se rechazan de más, nunca de
+     * menos). Si se excede el límite, la reserva se retira y no se comprueba
+     * nada.
+     *
+     * Uso: si la comprobación falla, la reserva se queda como intento
+     * fallido; si tiene éxito, se libera con liberarReserva() o
+     * reiniciarIntentos...().
+     *
+     * @param string $ambito AMBITO_LOGIN o un nombre corto ("segundo-factor"...).
+     * @param string $identificador Correo normalizado o id de la cuenta.
+     * @param string $origen IP del cliente.
+     * @param int $maximoIdentificador Intentos permitidos por identificador.
+     * @param int $maximoOrigen Intentos permitidos por origen.
+     * @return int|null Id de la reserva, o null si el límite está alcanzado.
+     */
+    public function reservarIntento(string $ambito, string $identificador, string $origen, int $maximoIdentificador, int $maximoOrigen): ?int
+    {
+        $huellaIdentificador = $this->calcularHuellaAmbito($ambito, $identificador);
+        $huellaOrigen = $this->calcularHuellaAmbito($ambito, $origen);
+        $this->intentoAccesoModel->purgarIntentosAntiguos(RETENCION_INTENTOS_SEGUNDOS);
+        $idReserva = $this->intentoAccesoModel->reservarIntento($huellaIdentificador, $huellaOrigen);
+
+        $dentroDelLimite = $this->intentoAccesoModel->contarIntentosPorCorreo($huellaIdentificador, VENTANA_INTENTOS_SEGUNDOS) <= $maximoIdentificador
+            && $this->intentoAccesoModel->contarIntentosPorOrigen($huellaOrigen, VENTANA_INTENTOS_SEGUNDOS) <= $maximoOrigen;
+        if (!$dentroDelLimite) {
+            $this->intentoAccesoModel->eliminarIntento($idReserva);
+            return null;
+        }
+        return $idReserva;
+    }
+
+    /**
+     * Retira una reserva cuyo intento tuvo éxito (no debe contar como fallo).
+     *
+     * @param int $idReserva Resultado de reservarIntento().
+     * @return void
+     */
+    public function liberarReserva(int $idReserva): void
+    {
+        $this->intentoAccesoModel->eliminarIntento($idReserva);
+    }
+
+    /**
+     * @param string $ambito Ámbito ('' = inicio de sesión).
+     * @param string $valor Identificador o IP.
+     * @return string Huella HMAC.
+     */
+    private function calcularHuellaAmbito(string $ambito, string $valor): string
+    {
+        return $this->calcularHuella($ambito === self::AMBITO_LOGIN ? $valor : $ambito . ':' . $valor);
+    }
+
     /**
      * Indica si se permite un nuevo intento.
      *
