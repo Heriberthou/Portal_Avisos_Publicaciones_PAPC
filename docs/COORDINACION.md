@@ -41,8 +41,17 @@ riesgo, propuesta). Claude Code lo corrige y responde en el mismo archivo.
 
 ### Codex
 
-- **Tarea en curso:** (pendiente de anotar)
-- **Archivos:** (pendiente de anotar)
+- **Tarea en curso:** Revisión de la especificación 1.3.
+- **Estado:** Revisión entregada. Hallazgos y cobertura en `docs/revision-codex.md`.
+- **Archivos que se revisan:** `README.md`, `config/rutas.php`, `config/permisos.php`,
+  `config/aplicacion.php`, `app/middleware/`, `app/nucleo/`, `app/controllers/`,
+  `app/models/`, `app/servicios/`, `app/views/`, `tests/`, `herramientas/`,
+  `database/migraciones/004-solicitud-acceso-activacion.sql`, su reversión y
+  `database/usuario-aplicacion.sql`. Referencia externa: `Especificacion_Integral_Login_y_Solicitud_de_Acceso_PAPC.docx`, versión 1.3, proporcionada por el responsable.
+- **Archivos que se modifican:** solo `docs/COORDINACION.md` y `docs/revision-codex.md`.
+- **Restricciones:** revisión estática; sin cambios de código, credenciales ni base de datos y sin ejecutar migraciones.
+- **Resultado:** ocho hallazgos abiertos (cuatro Alta y cuatro Media), con archivo, línea, escenario y propuesta. Código revisado: `6b0000674d0ec4094d41478a066036557b7d351c`.
+- **Verificación:** 82 archivos PHP sin errores de sintaxis con PHP 8.3.30 (`-n -l`). No se ejecutaron suites con base de datos. Compatibilidad en ejecución con PHP 8.2/MariaDB 10.4 y pruebas de despliegue: por confirmar.
 
 ## Base de datos
 
