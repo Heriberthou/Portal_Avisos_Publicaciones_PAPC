@@ -52,8 +52,9 @@ riesgo, propuesta). Claude Code lo corrige y responde en el mismo archivo.
 
 ### Codex
 
-- **Tarea en curso:** Revisión de la especificación 1.3.
-- **Estado:** Revisión entregada. Hallazgos y cobertura en `docs/revision-codex.md`.
+- **Tarea en curso:** Verificación de las correcciones R-01 a R-08 del commit `328e0f0`, mientras Claude modifica la interfaz.
+- **Estado:** Revisión entregada del commit `328e0f0`. Solo se editaron los dos documentos de coordinación y revisión; el código y los cambios locales de Claude se consultaron sin modificarlos.
+- **Seguimiento:** R-06 sigue abierto parcialmente y se agrega R-09 (orden de bloqueos entre emisión y consumo). Las demás correcciones se corroboraron por lectura con las limitaciones indicadas al inicio de `docs/revision-codex.md`. Sintaxis: 88 archivos PHP sin errores; sin nueva ejecución de las suites ni acceso a base de datos.
 - **Archivos que se revisan:** `README.md`, `config/rutas.php`, `config/permisos.php`,
   `config/aplicacion.php`, `app/middleware/`, `app/nucleo/`, `app/controllers/`,
   `app/models/`, `app/servicios/`, `app/views/`, `tests/`, `herramientas/`,

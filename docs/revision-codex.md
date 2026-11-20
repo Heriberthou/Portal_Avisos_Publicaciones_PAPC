@@ -1,5 +1,42 @@
 # Revisión de la especificación 1.3 — Codex
 
+## Seguimiento de Codex al commit 328e0f0
+
+Revisión del 19 de noviembre de 2026, posterior a las respuestas de Claude reproducidas abajo. Este seguimiento prevalece sobre los estados históricos del informe inicial. Se inspeccionó el commit `328e0f0640ef54294eec383ffd6e488cba8f9e17`; los cambios de interfaz sin commit siguen en elaboración y no se consideran una entrega terminada. No se ejecutaron migraciones, suites con base de datos ni cambios de código. El análisis de sintaxis de los 88 archivos PHP disponibles de app/config/herramientas/tests no encontró errores con PHP 8.3.30; dado que Claude trabaja en la misma carpeta, no constituye una certificación de una instantánea completa de la interfaz.
+
+| Hallazgo anterior | Verificación de Codex |
+|---|---|
+| R-01 | Corrección corroborada por lectura: revalidación del actor dentro de la transacción y comprobación de principal restante. Prueba R01 reproduce actor obsoleto; concurrencia real con dos operaciones administrativas: por confirmar. |
+| R-02 | Corrección corroborada por lectura: enlace con finalidad propia, pertenencia a cuenta, caducidad y consumo transaccional con el secreto. Se conserva el enlace de enrolamiento al activar al primer principal. |
+| R-03 | Corrección corroborada por lectura de 005 y validación de sesión; las cuentas heredadas sin validación dejan de tener acceso. No se aplicó la migración durante esta revisión. |
+| R-04 | Emisión contra emisión serializada por fila padre. Queda una interacción con consumo descrita en R-09. |
+| R-05 | Corrección corroborada por lectura: reautenticación reserva intentos y libera solamente su propia reserva al acertar. |
+| R-06 | **Abierto, corrección parcial:** la reserva precede a la comprobación, pero login y MFA exitosos borran reservas ajenas todavía en curso; detalle abajo. |
+| R-07 | Corrección corroborada en el commit: instrucciones condicionales y distinción del buzón local. La nueva presentación de Claude sigue en elaboración. |
+| R-08 | Precondición y preparación explícita presentes. Por confirmar: ejecución en MariaDB 10.4 y que la herramienta de importación usada detenga el lote ante el primer error; no usar una opción de continuar tras errores. |
+
+Las pruebas 79/79 son evidencia reportada por Claude, no una ejecución nueva de Codex. R01 y R06 modelan casos de concurrencia secuencialmente; R04 incorpora procesos de emisión concurrente, pero no cubre emisión contra consumo. HTTPS, accesibilidad y despliegue en XAMPP siguen pendientes de verificación.
+
+### R-06 — Pendiente después de introducir reservas
+
+- **Severidad:** Media.
+- **Archivo y línea:** `app/servicios/ServicioAutenticacion.php:111`, `app/servicios/ServicioSegundoFactor.php:313`, `app/models/IntentoAccesoModel.php:99` y `app/servicios/LimitadorIntentos.php:80`.
+- **Problema:** Un éxito llama a reiniciar todos los intentos de la cuenta/ámbito. El DELETE no distingue fallos terminados de reservas que otras peticiones ya admitidas siguen usando. Esas peticiones no vuelven a insertar su fallo al terminar: el servicio supone que su reserva permanece. Por ello se pierde tanto el cupo ocupado como el posterior fallo. El comentario del modelo que promete conservar el contador por IP tampoco corresponde al DELETE: elimina la fila que contiene ambas huellas.
+- **Escenario concreto de fallo o ataque:** Con límite de cinco, cuatro peticiones con contraseñas incorrectas y una legítima reservan cupo en sesiones distintas. La legítima termina primero y borra las cinco filas. Mientras las otras cuatro aún verifican, se admiten otras cinco. Las cuatro originales pueden fallar después sin dejar registro en el contador. No se afirma que el ataque funcione sin ningún éxito concurrente; esa es la condición concreta del caso.
+- **Propuesta de corrección:** Representar por separado reservas en curso y resultados terminados; liberar por ID solo la reserva del éxito y reiniciar únicamente los fallos que corresponda, conservando reservas ajenas y la política por origen. Añadir prueba con barreras: detener cuatro verificaciones, completar una válida, intentar más reservas y después completar los fallos. El test R06 actual no intercala un éxito con reservas pendientes.
+- **Estado:** Abierto.
+
+### R-09 — Emisión y consumo de tokens bloquean filas en orden inverso
+
+- **Severidad:** Media.
+- **Archivo y línea:** `app/models/TokenCuentaModel.php:48` y línea 52; `app/servicios/ServicioCredenciales.php:170` y líneas 172–173. Patrón equivalente en `app/models/TokenSolicitudModel.php:37` y `app/servicios/ServicioSolicitudAcceso.php:141`; también en `app/servicios/ServicioSegundoFactor.php:200`.
+- **Problema:** El emisor ahora bloquea primero la cuenta/solicitud y después actualiza sus tokens. El consumidor actualiza primero el token y después la cuenta/solicitud. Las dos transacciones pueden esperar mutuamente. Los catch revierten y relanzan la excepción sin reintento controlado, de modo que el usuario recibe un error interno aunque use un enlace vigente.
+- **Escenario concreto de fallo o ataque:** Una recuperación consume el token T y queda pendiente antes de actualizar la cuenta U. Un reenvío bloquea U e intenta invalidar T, esperando a la recuperación. La recuperación intenta actualizar U, esperando al reenvío. El motor debe abortar una transacción por interbloqueo. El mismo patrón aparece al confirmar correo mientras se reenvía su enlace. Es un riesgo de disponibilidad/fiabilidad; no demuestra reutilización exitosa del token ni acceso sin autorización. Intercalación confirmada por lectura, no ejecutada en la base.
+- **Propuesta de corrección:** Adoptar el mismo orden padre → token en emisión, consumo y revocación. El consumidor puede localizar el padre, bloquearlo y después releer y consumir condicionalmente el token dentro de la transacción. Revisar también MFA y las operaciones administrativas que invalidan enlaces. Probar con dos conexiones y barreras antes de cada bloqueo; si se implementa reintento, que sea acotado y sin repetir correos ni otros efectos externos.
+- **Estado:** Abierto.
+
+---
+
 Fecha: 19 de noviembre de 2026. Rama: `feature/diseno`. Código revisado: `6b0000674d0ec4094d41478a066036557b7d351c`.
 
 Referencia funcional: `Especificacion_Integral_Login_y_Solicitud_de_Acceso_PAPC.docx`, versión 1.3, proporcionada por el responsable desde su carpeta Descargas. Se contrastó con README, rutas, permisos, middleware, núcleo, servicios, modelos, controladores, vistas, herramientas, pruebas y SQL. El documento es una especificación del producto; las instrucciones de trabajo son las del responsable y de coordinación.
