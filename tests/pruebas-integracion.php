@@ -876,6 +876,133 @@ return static function (MarcoPruebas $marco, BaseDatosPruebas $baseDatos): void 
         MarcoPruebas::afirmarIgual(0, $baseDatos->contar('SELECT COUNT(*) FROM intento_acceso'), 'Un inicio correcto no deja intentos registrados');
     });
 
+    $marco->probar('R06b', 'R-06: un éxito retira solo su propia reserva; los fallos y reservas de otras peticiones siguen contando', static function () use ($baseDatos, $iniciarComo, $contrasenaComun, $contrasenaPrincipal, $servicioSegundoFactor, &$secretosTotp, $codigoActual): void {
+        $limitador = new LimitadorIntentos(new IntentoAccesoModel(obtenerConexionBaseDatos()), (string) getenv('CLAVE_HUELLAS'));
+        $pendientes = 4;
+
+        // Inicio de sesión: cuatro peticiones con contraseñas incorrectas
+        // reservaron su cupo y siguen comprobando; la legítima termina antes.
+        $baseDatos->limpiarIntentos();
+        for ($peticion = 1; $peticion <= $pendientes; $peticion++) {
+            $limitador->reservarIntento(LimitadorIntentos::AMBITO_LOGIN, 'ana@ejemplo.mx', '198.51.100.' . $peticion, MAX_INTENTOS_LOGIN, MAX_INTENTOS_LOGIN_ORIGEN);
+        }
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_EXITO, $iniciarComo('ana@ejemplo.mx', $contrasenaComun), 'La petición legítima entra');
+        MarcoPruebas::afirmarIgual($pendientes, $baseDatos->contar('SELECT COUNT(*) FROM intento_acceso'), 'Las reservas de las otras peticiones siguen registradas');
+        $admitidas = 0;
+        for ($peticion = 1; $peticion <= MAX_INTENTOS_LOGIN; $peticion++) {
+            $admitidas += $limitador->reservarIntento(LimitadorIntentos::AMBITO_LOGIN, 'ana@ejemplo.mx', '198.51.100.' . (50 + $peticion), MAX_INTENTOS_LOGIN, MAX_INTENTOS_LOGIN_ORIGEN) !== null ? 1 : 0;
+        }
+        MarcoPruebas::afirmarIgual(MAX_INTENTOS_LOGIN - $pendientes, $admitidas, 'Mientras terminan, solo se admite el cupo que queda');
+
+        // Segundo factor: el mismo caso con el código de la aplicación.
+        $baseDatos->limpiarIntentos();
+        MarcoPruebas::afirmarIgual(ServicioAutenticacion::RESULTADO_REQUIERE_SEGUNDO_FACTOR, $iniciarComo('paula@ejemplo.mx', $contrasenaPrincipal), 'Pide el código');
+        $baseDatos->limpiarIntentos();
+        $idPaula = (string) $baseDatos->obtenerFilaUsuario('paula@ejemplo.mx')['id_usuario'];
+        for ($peticion = 1; $peticion <= $pendientes; $peticion++) {
+            $limitador->reservarIntento('segundo-factor', $idPaula, '198.51.100.' . $peticion, MAX_INTENTOS_SEGUNDO_FACTOR, MAX_INTENTOS_LOGIN_ORIGEN);
+        }
+        $baseDatos->obtenerConexionAdministrativa()->exec("UPDATE usuario SET ultimo_paso_mfa_usuario = NULL WHERE id_usuario = {$idPaula}");
+        MarcoPruebas::afirmarIgual(ServicioSegundoFactor::RESULTADO_EXITO, $servicioSegundoFactor->verificarCodigo($codigoActual($secretosTotp['paula@ejemplo.mx']), '192.0.2.250'), 'El código correcto entra');
+        MarcoPruebas::afirmarIgual($pendientes, $baseDatos->contar('SELECT COUNT(*) FROM intento_acceso'), 'Segundo factor: las reservas ajenas siguen registradas');
+        $admitidas = 0;
+        for ($peticion = 1; $peticion <= MAX_INTENTOS_SEGUNDO_FACTOR; $peticion++) {
+            $admitidas += $limitador->reservarIntento('segundo-factor', $idPaula, '198.51.100.' . (50 + $peticion), MAX_INTENTOS_SEGUNDO_FACTOR, MAX_INTENTOS_LOGIN_ORIGEN) !== null ? 1 : 0;
+        }
+        MarcoPruebas::afirmarIgual(MAX_INTENTOS_SEGUNDO_FACTOR - $pendientes, $admitidas, 'Segundo factor: solo se admite el cupo que queda');
+        $baseDatos->limpiarIntentos();
+    });
+
+    $marco->probar('R09', 'R-09: consumir y emitir enlaces a la vez bloquean en el mismo orden (cuenta o solicitud, luego enlace) y no se interbloquean', static function () use ($baseDatos, $dependencias): void {
+        /** @var TokenCuentaModel $tokenCuentaModel */
+        $tokenCuentaModel = $dependencias['tokenCuentaModel'];
+        $conexionConsumo = $baseDatos->obtenerConexionAdministrativa();
+        $conexionConsumo->exec('SET SESSION innodb_lock_wait_timeout = 10');
+
+        /**
+         * Intercalación del hallazgo: la petición A consume el enlace; mientras
+         * sigue en su transacción, la petición B (otro proceso) emite un enlace
+         * nuevo para el mismo padre; después A actualiza el padre y confirma.
+         * Con el orden inverso (enlace antes que padre) A y B se esperan
+         * mutuamente y el motor aborta una con un interbloqueo (1213).
+         *
+         * @param string $modo 'cuenta' o 'solicitud'.
+         * @param int $idPadre Cuenta o solicitud.
+         * @param callable(): bool $consumir Consume el enlace en la conexión A.
+         * @param string $actualizarPadre UPDATE del padre en la conexión A.
+         * @return array{consumido: bool, salidaEmisor: string, error: string|null}
+         */
+        $intercalar = static function (string $modo, int $idPadre, callable $consumir, string $actualizarPadre) use ($conexionConsumo, $baseDatos): array {
+            $error = null;
+            $consumido = false;
+            $emisor = null;
+            $tuberias = [];
+            $conexionConsumo->beginTransaction();
+            try {
+                $consumido = $consumir();
+                $emisor = proc_open(
+                    [PHP_BINARY, RUTA_RAIZ . '/tests/auxiliar-emision-concurrente.php', (string) $idPadre, '0', '', $modo],
+                    [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                    $tuberias,
+                    RUTA_RAIZ,
+                    getenv()
+                );
+                // Espera a que el emisor quede detenido esperando un bloqueo.
+                for ($espera = 0; $espera < 100 && $baseDatos->contar("SELECT COUNT(*) FROM information_schema.INNODB_TRX WHERE trx_state = 'LOCK WAIT'") === 0; $espera++) {
+                    usleep(50000);
+                }
+                $conexionConsumo->exec($actualizarPadre);
+                $conexionConsumo->commit();
+            } catch (PDOException $excepcion) {
+                $error = $excepcion->getMessage();
+                if ($conexionConsumo->inTransaction()) {
+                    $conexionConsumo->rollBack();
+                }
+            }
+            $salidaEmisor = '';
+            if ($emisor !== null) {
+                $salidaEmisor = (string) stream_get_contents($tuberias[1]) . (string) stream_get_contents($tuberias[2]);
+                proc_close($emisor);
+            }
+            return ['consumido' => $consumido, 'salidaEmisor' => $salidaEmisor, 'error' => $error];
+        };
+
+        // Cuenta: recuperación de contraseña contra reenvío de enlace.
+        $idAna = (int) $baseDatos->obtenerFilaUsuario('ana@ejemplo.mx')['id_usuario'];
+        $tokenCuentaModel->crearToken($idAna, TokenCuentaModel::FINALIDAD_RECUPERACION, GeneradorTokens::calcularHashToken(GeneradorTokens::generarToken()), 600);
+        $idToken = $baseDatos->contar("SELECT MAX(id_token_cuenta) FROM token_cuenta WHERE id_usuario_destinatario = {$idAna}");
+        $modeloConsumo = new TokenCuentaModel($conexionConsumo);
+        $cuenta = $intercalar('cuenta', $idAna, static fn (): bool => $modeloConsumo->consumirToken($idToken, $idAna), "UPDATE usuario SET version_sesion_usuario = version_sesion_usuario + 1 WHERE id_usuario = {$idAna}");
+        MarcoPruebas::afirmarIgual(null, $cuenta['error'], 'Cuenta: la petición que consume termina sin interbloqueo');
+        MarcoPruebas::afirmar($cuenta['consumido'], 'Cuenta: el enlace vigente se consumió');
+        MarcoPruebas::afirmar(str_contains($cuenta['salidaEmisor'], 'ok'), 'Cuenta: la emisión esperó y terminó sin error: ' . trim($cuenta['salidaEmisor']));
+        MarcoPruebas::afirmarIgual(1, $tokenCuentaModel->contarTokensVigentes($idAna, TokenCuentaModel::FINALIDAD_RECUPERACION), 'Cuenta: queda solo el enlace nuevo');
+        $tokenCuentaModel->invalidarTokens($idAna);
+
+        // Solicitud: confirmar el correo contra reenvío del enlace de verificación.
+        $idSolicitud = $baseDatos->contar('SELECT MIN(id_solicitud_acceso) FROM solicitud_acceso');
+        $tokenSolicitudModel = new TokenSolicitudModel(obtenerConexionBaseDatos());
+        $tokenSolicitudModel->crearToken($idSolicitud, GeneradorTokens::calcularHashToken(GeneradorTokens::generarToken()), 600);
+        $idTokenSolicitud = $baseDatos->contar("SELECT MAX(id_token_solicitud) FROM token_solicitud WHERE id_solicitud_acceso_destinataria = {$idSolicitud}");
+        $modeloSolicitudConsumo = new TokenSolicitudModel($conexionConsumo);
+        $solicitud = $intercalar('solicitud', $idSolicitud, static fn (): bool => $modeloSolicitudConsumo->consumirToken($idTokenSolicitud, $idSolicitud), "UPDATE solicitud_acceso SET fecha_verificacion_correo_solicitud = fecha_verificacion_correo_solicitud WHERE id_solicitud_acceso = {$idSolicitud}");
+        MarcoPruebas::afirmarIgual(null, $solicitud['error'], 'Solicitud: la petición que consume termina sin interbloqueo');
+        MarcoPruebas::afirmar($solicitud['consumido'], 'Solicitud: el enlace vigente se consumió');
+        MarcoPruebas::afirmar(str_contains($solicitud['salidaEmisor'], 'ok'), 'Solicitud: la emisión esperó y terminó sin error: ' . trim($solicitud['salidaEmisor']));
+        $baseDatos->obtenerConexionAdministrativa()->exec("UPDATE token_solicitud SET fecha_consumo_token_solicitud = NOW() WHERE id_solicitud_acceso_destinataria = {$idSolicitud} AND fecha_consumo_token_solicitud IS NULL");
+        $conexionConsumo->exec('SET SESSION innodb_lock_wait_timeout = 50');
+
+        // Consumir fuera de una transacción no está permitido: el orden de
+        // bloqueo solo vale si el padre se actualiza en la misma transacción.
+        $rechazado = false;
+        try {
+            $tokenCuentaModel->consumirToken($idToken, $idAna);
+        } catch (LogicException) {
+            $rechazado = true;
+        }
+        MarcoPruebas::afirmar($rechazado, 'consumirToken() exige una transacción abierta');
+    });
+
     $marco->probar('R07', 'R-07/AC-26: si el correo falla, la aprobación lo dice y se puede reenviar', static function () use ($baseDatos, $buzon, $servicioSolicitud, $actor, $origenNuevo, $datosSolicitud): void {
         $correoFallido = new ServicioCorreo('desactivado', 'http://papc.prueba.invalid', 'x@papc.invalid', $buzon->directorio);
         $dependenciasSinCorreo = Aplicacion::construirDependencias(obtenerConexionBaseDatos(), $correoFallido);

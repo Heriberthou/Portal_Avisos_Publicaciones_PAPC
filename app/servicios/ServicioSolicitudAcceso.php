@@ -138,7 +138,7 @@ final class ServicioSolicitudAcceso
         try {
             $tokenVigente = $this->tokenSolicitudModel->obtenerTokenVigente(GeneradorTokens::calcularHashToken($token));
             if ($tokenVigente === null
-                || !$this->tokenSolicitudModel->consumirToken((int) $tokenVigente['id_token_solicitud'])
+                || !$this->tokenSolicitudModel->consumirToken((int) $tokenVigente['id_token_solicitud'], (int) $tokenVigente['id_solicitud_acceso_destinataria'])
                 || !$this->solicitudAccesoModel->marcarCorreoVerificado((int) $tokenVigente['id_solicitud_acceso_destinataria'])) {
                 $this->conexion->rollBack();
                 $this->auditoriaModel->registrarEventoAuditoria(null, AuditoriaModel::ACCION_ENLACE_INVALIDO, 'token_solicitud', null, ['finalidad' => 'VERIFICACION']);

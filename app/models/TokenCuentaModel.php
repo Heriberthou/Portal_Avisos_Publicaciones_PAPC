@@ -45,10 +45,7 @@ final class TokenCuentaModel
             $this->conexion->beginTransaction();
         }
         try {
-            $bloqueo = $this->conexion->prepare('SELECT id_usuario FROM usuario WHERE id_usuario = :idUsuario FOR UPDATE');
-            $bloqueo->execute(['idUsuario' => $idUsuario]);
-            $bloqueo->fetchAll();
-
+            $this->bloquearCuenta($idUsuario);
             $this->invalidarTokens($idUsuario, $finalidad);
             $sentencia = $this->conexion->prepare(
                 'INSERT INTO token_cuenta (id_usuario_destinatario, hash_token_cuenta, finalidad_token_cuenta, fecha_expiracion_token_cuenta)
@@ -108,17 +105,30 @@ final class TokenCuentaModel
     }
 
     /**
+     * Consume el token una sola vez (UPDATE condicional).
+     *
+     * R-09: primero bloquea la cuenta y después el token, el mismo orden que
+     * crearToken() e invalidarTokens(). Así consumir y emitir a la vez para la
+     * misma cuenta se ejecutan una tras otra y no se interbloquean. Debe
+     * llamarse dentro de la transacción que después actualiza la cuenta.
+     *
      * @param int $idToken Token.
+     * @param int $idUsuario Cuenta destinataria esperada.
      * @return bool true solo para la primera petición que lo consume.
+     * @throws LogicException Si no hay una transacción abierta.
      */
-    public function consumirToken(int $idToken): bool
+    public function consumirToken(int $idToken, int $idUsuario): bool
     {
+        if (!$this->conexion->inTransaction()) {
+            throw new LogicException('consumirToken() requiere una transacción abierta.');
+        }
+        $this->bloquearCuenta($idUsuario);
         $sentencia = $this->conexion->prepare(
             'UPDATE token_cuenta SET fecha_consumo_token_cuenta = NOW()
-             WHERE id_token_cuenta = :idToken AND fecha_consumo_token_cuenta IS NULL
-               AND fecha_expiracion_token_cuenta > NOW()'
+             WHERE id_token_cuenta = :idToken AND id_usuario_destinatario = :idUsuario
+               AND fecha_consumo_token_cuenta IS NULL AND fecha_expiracion_token_cuenta > NOW()'
         );
-        $sentencia->execute(['idToken' => $idToken]);
+        $sentencia->execute(['idToken' => $idToken, 'idUsuario' => $idUsuario]);
         return $sentencia->rowCount() === 1;
     }
 
@@ -138,11 +148,28 @@ final class TokenCuentaModel
             $filtroFinalidad = ' AND finalidad_token_cuenta = :finalidad';
             $parametros['finalidad'] = $finalidad;
         }
+        $this->bloquearCuenta($idUsuario);
         $sentencia = $this->conexion->prepare(
             'UPDATE token_cuenta SET fecha_consumo_token_cuenta = NOW()
              WHERE id_usuario_destinatario = :idUsuario AND fecha_consumo_token_cuenta IS NULL' . $filtroFinalidad
         );
         $sentencia->execute($parametros);
+    }
+
+    /**
+     * Bloquea la fila de la cuenta hasta el fin de la transacción (R-04, R-09).
+     *
+     * Orden único en todo el sistema: cuenta y después sus tokens. Si ya está
+     * bloqueada por la misma transacción, no hace nada nuevo.
+     *
+     * @param int $idUsuario Cuenta.
+     * @return void
+     */
+    private function bloquearCuenta(int $idUsuario): void
+    {
+        $bloqueo = $this->conexion->prepare('SELECT id_usuario FROM usuario WHERE id_usuario = :idUsuario FOR UPDATE');
+        $bloqueo->execute(['idUsuario' => $idUsuario]);
+        $bloqueo->fetchAll();
     }
 
     /**

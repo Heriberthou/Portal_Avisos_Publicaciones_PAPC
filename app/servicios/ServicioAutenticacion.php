@@ -108,7 +108,9 @@ final class ServicioAutenticacion
             return self::RESULTADO_CREDENCIALES_INVALIDAS;
         }
 
-        $this->limitadorIntentos->reiniciarIntentosCuenta($correoNormalizado);
+        // Solo se retira la reserva de ESTA petición (R-06): los fallos y las
+        // reservas de otras peticiones siguen contando hasta salir de la ventana.
+        $this->limitadorIntentos->liberarReserva($reserva);
         $idUsuario = (int) $usuario['id_usuario'];
 
         if (in_array($usuario['rol_usuario'], UsuarioModel::ROLES_CON_SEGUNDO_FACTOR, true)) {

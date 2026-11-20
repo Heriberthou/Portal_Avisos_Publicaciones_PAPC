@@ -114,6 +114,8 @@ Detalle y respuesta de cada hallazgo en `docs/revision-codex.md`.
 | R-06 Límites con peticiones simultáneas | Cada intento se reserva (INSERT) antes de comprobar la credencial y se cuenta incluyéndose; si excede, se retira sin comprobar | `LimitadorIntentos::reservarIntento` | R06 |
 | R-07 Envío fingido | Instrucciones condicionales ("si recibe un mensaje..."), aviso de modo de demostración y mensajes al administrador que dicen si quedó en el buzón, se entregó al servicio o falló | `solicitud-recibida.php`, `ServicioSolicitudAcceso`, `ServicioCorreo` | R07, H03 |
 | R-08 Reversión que reabre cuentas | La reversión 004 se detiene antes de borrar si hay cuentas restringidas utilizables; `004-preparar-reversion.sql` (con autorización) las bloquea y deja evidencia | `004-...-revertir.sql`, `004-preparar-reversion.sql` | R03b |
+| R-06 (seguimiento) Un éxito borraba reservas ajenas | El éxito retira solo su propia reserva (por id); los fallos y reservas de otras peticiones siguen contando hasta vencer | `LimitadorIntentos::liberarReserva`, `ServicioAutenticacion`, `ServicioSegundoFactor` | R06b |
+| R-09 Interbloqueo al consumir y emitir | Consumir un enlace bloquea primero la cuenta o la solicitud y después el enlace, igual que emitir e invalidar | `TokenCuentaModel::consumirToken`, `TokenSolicitudModel::consumirToken` | R09 (dos conexiones reales) |
 
 ### Diseño de las pantallas de acceso y textos (20/11/2026)
 
@@ -167,7 +169,7 @@ las migraciones, la aplicación responde error 500.
 
 Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 local (base desechable `papc_db_pruebas`, cuenta de
 aplicación con los GRANT de `usuario-aplicacion.sql`), servidor embebido `php -S`.
-Resultado: **79/79** (19 unitarias, 42 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
+Resultado: **81/81** (19 unitarias, 44 de integración, 18 HTTP). Salida completa en `docs/evidencia-pruebas.txt`.
 **No se ejecutaron en el XAMPP del servidor.**
 
 | AC | Caso | Prueba(s) | Resultado |
@@ -200,7 +202,9 @@ Resultado: **79/79** (19 unitarias, 42 de integración, 18 HTTP). Salida complet
 verificado: P02; administrador sin segundo factor: P26a, P26b, P37, P38; cuenta aprobada que nace ACTIVA: P19, P30a,
 P26a, P02). 20/11/2026, sobre las correcciones: quitar la revalidación del actor (falla R01); configurar el segundo
 factor sin enlace (fallan P26a, P26b, R02); re-autenticación sin límite (falla R05); emitir enlaces sin bloquear la
-cuenta (falla R04); iniciar sesión sin validación institucional (falla R03). Después se restauró el código.
+cuenta (falla R04); iniciar sesión sin validación institucional (falla R03). Seguimiento R-06/R-09: liberar
+borrando por huella (fallan R06 y R06b); consumir un enlace sin bloquear antes la cuenta o la solicitud (R09 obtiene el
+interbloqueo real 1213). Después se restauró el código.
 
 Nota sobre R-04: con 8 procesos simultáneos (5 rondas, también en READ COMMITTED) nunca quedaron dos enlaces vigentes,
 **ni siquiera sin el bloqueo explícito**: los bloqueos propios de InnoDB hacen muy estrecha la ventana de la carrera.
@@ -224,7 +228,8 @@ bloqueo de la cuenta, antes de invalidar nada.
 8. **Aviso de privacidad**: es un borrador del prototipo; responsable y plazos de conservación los define la institución.
 9. **MariaDB 10.4** (la del XAMPP): las migraciones 004 y 005 y sus reversiones se probaron en MariaDB 11.5; no se
    ejecutaron en 10.4.
-10. **Esperas progresivas** (SEG-07): se usa una ventana deslizante de 15 min, no esperas que crecen.
+10. **Esperas progresivas** (SEG-07): se usa una ventana deslizante de 15 min, no esperas que crecen. Un inicio de sesión
+    correcto no borra los fallos anteriores de la cuenta (R-06): siguen contando hasta que vencen.
 11. **Usabilidad** (sección 8.5): falta la prueba con al menos una persona ajena al proyecto.
 
 ---

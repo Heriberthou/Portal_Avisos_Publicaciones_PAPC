@@ -19,6 +19,10 @@ riesgo, propuesta). Claude Code lo corrige y responde en el mismo archivo.
 ### Claude Code
 
 - **Tarea en curso:** ninguna.
+- **Tarea terminada (20/11/2026):** corrección de R-06 (seguimiento) y R-09 de `docs/revision-codex.md`.
+  Archivos: `LimitadorIntentos`, `IntentoAccesoModel`, `ServicioAutenticacion`, `ServicioSegundoFactor`,
+  `TokenCuentaModel`, `TokenSolicitudModel`, `ServicioCredenciales`, `ServicioSolicitudAcceso`, `tests/` (R06b, R09 y el auxiliar
+  de emisión), `README.md`. **Sin cambios de base de datos.** Pruebas 81/81.
 - **Tarea terminada (20/11/2026):** rediseño de las pantallas de acceso y revisión de textos (trato de usted,
   sin mensajes técnicos, "verificación en dos pasos"). Archivos: `app/views/` (nuevos parciales `acceso-inicio`,
   `acceso-fin`, `mensajes-flash`; se eliminó `bienvenida.php`), `public/css/portal.css`, `public/img/`,

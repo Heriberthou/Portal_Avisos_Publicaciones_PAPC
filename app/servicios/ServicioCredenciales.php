@@ -167,7 +167,7 @@ final class ServicioCredenciales
             $tokenVigente = $this->tokenCuentaModel->obtenerTokenVigente(GeneradorTokens::calcularHashToken($token), $finalidad);
             $aplicado = $tokenVigente !== null
                 && (int) $tokenVigente['id_usuario_destinatario'] === $idUsuario
-                && $this->tokenCuentaModel->consumirToken((int) $tokenVigente['id_token_cuenta'])
+                && $this->tokenCuentaModel->consumirToken((int) $tokenVigente['id_token_cuenta'], $idUsuario)
                 && ($finalidad === TokenCuentaModel::FINALIDAD_ACTIVACION
                     ? $this->usuarioModel->activarCuenta($idUsuario, $hashContrasena)
                     : $this->usuarioModel->restablecerContrasena($idUsuario, $hashContrasena));

@@ -1,11 +1,12 @@
 <?php
 
 /**
- * Auxiliar de la prueba R04 (solo consola): emite un enlace de recuperación
- * para una cuenta en un instante acordado, para que varios procesos lo hagan
- * a la vez con conexiones independientes (concurrencia real, hallazgo R-04).
+ * Auxiliar de las pruebas R04 y R09 (solo consola): emite un enlace en un
+ * instante acordado, con una conexión independiente (concurrencia real).
+ *   - cuenta (predeterminado): enlace de recuperación para la cuenta indicada.
+ *   - solicitud: enlace de verificación para la solicitud indicada.
  *
- * Uso: php tests/auxiliar-emision-concurrente.php <idUsuario> <microtimeInicio> [READ-COMMITTED]
+ * Uso: php tests/auxiliar-emision-concurrente.php <id> <microtimeInicio> [READ-COMMITTED|''] [cuenta|solicitud]
  * La configuración de la base de pruebas llega por variables de entorno.
  */
 
@@ -18,7 +19,7 @@ if (PHP_SAPI !== 'cli') {
 
 require dirname(__DIR__) . '/app/nucleo/arranque.php';
 
-$idUsuario = (int) ($argv[1] ?? 0);
+$idPadre = (int) ($argv[1] ?? 0);
 $inicio = (float) ($argv[2] ?? 0);
 $conexion = obtenerConexionBaseDatos();
 // READ COMMITTED quita los bloqueos de rango de InnoDB: la protección debe
@@ -26,11 +27,15 @@ $conexion = obtenerConexionBaseDatos();
 if (($argv[3] ?? '') === 'READ-COMMITTED') {
     $conexion->exec('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
 }
-$tokenCuentaModel = new TokenCuentaModel($conexion);
 
 // Todos los procesos esperan el mismo instante antes de emitir.
 while (microtime(true) < $inicio) {
     usleep(500);
 }
-$tokenCuentaModel->crearToken($idUsuario, TokenCuentaModel::FINALIDAD_RECUPERACION, GeneradorTokens::calcularHashToken(GeneradorTokens::generarToken()), 600);
+$hashToken = GeneradorTokens::calcularHashToken(GeneradorTokens::generarToken());
+if (($argv[4] ?? 'cuenta') === 'solicitud') {
+    (new TokenSolicitudModel($conexion))->crearToken($idPadre, $hashToken, 600);
+} else {
+    (new TokenCuentaModel($conexion))->crearToken($idPadre, TokenCuentaModel::FINALIDAD_RECUPERACION, $hashToken, 600);
+}
 echo "ok\n";

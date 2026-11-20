@@ -18,22 +18,6 @@ final class IntentoAccesoModel
     }
 
     /**
-     * Registra un intento fallido de inicio de sesión.
-     *
-     * @param string $huellaCorreo HMAC del correo normalizado.
-     * @param string $huellaOrigen HMAC de la IP de origen.
-     * @return void
-     */
-    public function registrarIntentoFallido(string $huellaCorreo, string $huellaOrigen): void
-    {
-        $sentencia = $this->conexion->prepare(
-            'INSERT INTO intento_acceso (huella_correo_intento_acceso, huella_origen_intento_acceso)
-             VALUES (:huellaCorreo, :huellaOrigen)'
-        );
-        $sentencia->execute(['huellaCorreo' => $huellaCorreo, 'huellaOrigen' => $huellaOrigen]);
-    }
-
-    /**
      * Inserta un intento ANTES de comprobar la credencial (reserva de cupo,
      * hallazgo R-06) y devuelve su id para poder retirarlo después.
      *
@@ -43,7 +27,11 @@ final class IntentoAccesoModel
      */
     public function reservarIntento(string $huellaCorreo, string $huellaOrigen): int
     {
-        $this->registrarIntentoFallido($huellaCorreo, $huellaOrigen);
+        $sentencia = $this->conexion->prepare(
+            'INSERT INTO intento_acceso (huella_correo_intento_acceso, huella_origen_intento_acceso)
+             VALUES (:huellaCorreo, :huellaOrigen)'
+        );
+        $sentencia->execute(['huellaCorreo' => $huellaCorreo, 'huellaOrigen' => $huellaOrigen]);
         return (int) $this->conexion->lastInsertId();
     }
 
@@ -87,21 +75,6 @@ final class IntentoAccesoModel
         );
         $sentencia->execute(['huellaOrigen' => $huellaOrigen, 'ventanaSegundos' => $ventanaSegundos]);
         return (int) $sentencia->fetchColumn();
-    }
-
-    /**
-     * Borra los intentos de una cuenta tras un inicio de sesión exitoso.
-     * Los intentos por origen se conservan (siguen contando para la IP).
-     *
-     * @param string $huellaCorreo HMAC del correo.
-     * @return void
-     */
-    public function eliminarIntentosPorCorreo(string $huellaCorreo): void
-    {
-        $sentencia = $this->conexion->prepare(
-            'DELETE FROM intento_acceso WHERE huella_correo_intento_acceso = :huellaCorreo'
-        );
-        $sentencia->execute(['huellaCorreo' => $huellaCorreo]);
     }
 
     /**

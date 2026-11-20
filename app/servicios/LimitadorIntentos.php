@@ -3,17 +3,21 @@
 declare(strict_types=1);
 
 /**
- * Limitación de intentos de inicio de sesión por cuenta y por origen.
+ * Limitación de intentos por identificador (correo o cuenta) y por origen.
  *
- * Algoritmo (ventana deslizante):
- *   1. Se calcula una huella HMAC-SHA256 del correo y otra de la IP.
- *   2. Se cuentan los fallos de cada huella en los últimos
- *      VENTANA_INTENTOS_SEGUNDOS.
- *   3. Si la cuenta supera MAX_INTENTOS_LOGIN, o el origen supera
- *      MAX_INTENTOS_LOGIN_ORIGEN, se rechaza el intento SIN verificar la
- *      contraseña.
- *   4. El bloqueo se levanta solo cuando los fallos antiguos salen de la
- *      ventana: nunca es permanente, así un atacante no puede bloquear una
+ * Algoritmo (ventana deslizante con reserva, hallazgo R-06):
+ *   1. Se calcula una huella HMAC-SHA256 del identificador y otra de la IP,
+ *      antepuestas del ámbito (inicio de sesión, segundo factor...).
+ *   2. Cada petición INSERTA su intento antes de comprobar la credencial
+ *      (reserva) y luego cuenta los intentos de la ventana incluyéndose.
+ *   3. Si se excede MAX del identificador o del origen, retira su reserva y
+ *      se rechaza SIN comprobar nada.
+ *   4. Si la comprobación falla, la reserva queda como intento fallido.
+ *      Si tiene éxito, se retira SOLO esa reserva (liberarReserva). Nunca se
+ *      borran los intentos de otras peticiones: algunas pueden estar todavía
+ *      en curso y sus fallos no volverían a registrarse.
+ *   5. Los intentos dejan de contar cuando salen de VENTANA_INTENTOS_SEGUNDOS:
+ *      el bloqueo nunca es permanente, así un atacante no puede bloquear una
  *      cuenta legítima indefinidamente.
  *
  * Contar por cuenta frena ataques dirigidos a un correo desde muchas IP;
@@ -22,6 +26,9 @@ declare(strict_types=1);
  */
 final class LimitadorIntentos
 {
+    /** Ámbito del inicio de sesión: sin prefijo (compatible con los registros previos). */
+    public const AMBITO_LOGIN = '';
+
     /**
      * @param IntentoAccesoModel $intentoAccesoModel Persistencia de intentos.
      * @param string $claveHuellas Secreto HMAC (CLAVE_HUELLAS del .env).
@@ -51,9 +58,6 @@ final class LimitadorIntentos
         return hash_hmac('sha256', $valor, $this->claveHuellas);
     }
 
-    /** Ámbito del inicio de sesión: sin prefijo (compatible con los registros previos). */
-    public const AMBITO_LOGIN = '';
-
     /**
      * Reserva atómica de un intento (hallazgo R-06).
      *
@@ -63,10 +67,6 @@ final class LimitadorIntentos
      * el máximo configurado (en el peor caso se rechazan de más, nunca de
      * menos). Si se excede el límite, la reserva se retira y no se comprueba
      * nada.
-     *
-     * Uso: si la comprobación falla, la reserva se queda como intento
-     * fallido; si tiene éxito, se libera con liberarReserva() o
-     * reiniciarIntentos...().
      *
      * @param string $ambito AMBITO_LOGIN o un nombre corto ("segundo-factor"...).
      * @param string $identificador Correo normalizado o id de la cuenta.
@@ -92,7 +92,8 @@ final class LimitadorIntentos
     }
 
     /**
-     * Retira una reserva cuyo intento tuvo éxito (no debe contar como fallo).
+     * Retira la reserva de una petición que tuvo éxito (no cuenta como fallo).
+     * Solo afecta a esa reserva; los demás intentos se conservan.
      *
      * @param int $idReserva Resultado de reservarIntento().
      * @return void
@@ -110,112 +111,5 @@ final class LimitadorIntentos
     private function calcularHuellaAmbito(string $ambito, string $valor): string
     {
         return $this->calcularHuella($ambito === self::AMBITO_LOGIN ? $valor : $ambito . ':' . $valor);
-    }
-
-    /**
-     * Indica si se permite un nuevo intento.
-     *
-     * @param string $correoNormalizado Correo del formulario.
-     * @param string $origen IP del cliente.
-     * @return bool true si está permitido; false si está temporalmente limitado.
-     */
-    public function verificarLimiteIntentos(string $correoNormalizado, string $origen): bool
-    {
-        $intentosCuenta = $this->intentoAccesoModel->contarIntentosPorCorreo(
-            $this->calcularHuella($correoNormalizado),
-            VENTANA_INTENTOS_SEGUNDOS
-        );
-        if ($intentosCuenta >= MAX_INTENTOS_LOGIN) {
-            return false;
-        }
-        $intentosOrigen = $this->intentoAccesoModel->contarIntentosPorOrigen(
-            $this->calcularHuella($origen),
-            VENTANA_INTENTOS_SEGUNDOS
-        );
-        return $intentosOrigen < MAX_INTENTOS_LOGIN_ORIGEN;
-    }
-
-    /**
-     * Registra un fallo y aprovecha para purgar intentos antiguos.
-     *
-     * @param string $correoNormalizado Correo del formulario.
-     * @param string $origen IP del cliente.
-     * @return void
-     */
-    public function registrarIntentoFallido(string $correoNormalizado, string $origen): void
-    {
-        $this->intentoAccesoModel->registrarIntentoFallido(
-            $this->calcularHuella($correoNormalizado),
-            $this->calcularHuella($origen)
-        );
-        $this->intentoAccesoModel->purgarIntentosAntiguos(RETENCION_INTENTOS_SEGUNDOS);
-    }
-
-    /**
-     * Límite genérico por ÁMBITO (solicitud, recuperación, segundo factor).
-     *
-     * El ámbito se antepone al valor antes de calcular la huella, de modo que
-     * los contadores de cada formulario son independientes entre sí y del
-     * inicio de sesión, aunque compartan la tabla intento_acceso.
-     *
-     * @param string $ambito Nombre corto del formulario (p. ej. "solicitud").
-     * @param string $identificador Correo normalizado o id de la cuenta.
-     * @param string $origen IP del cliente.
-     * @param int $maximoIdentificador Envíos permitidos por identificador.
-     * @param int $maximoOrigen Envíos permitidos por origen.
-     * @return bool true si se permite.
-     */
-    public function verificarLimiteAmbito(string $ambito, string $identificador, string $origen, int $maximoIdentificador, int $maximoOrigen): bool
-    {
-        $intentosIdentificador = $this->intentoAccesoModel->contarIntentosPorCorreo(
-            $this->calcularHuella($ambito . ':' . $identificador),
-            VENTANA_INTENTOS_SEGUNDOS
-        );
-        if ($intentosIdentificador >= $maximoIdentificador) {
-            return false;
-        }
-        $intentosOrigen = $this->intentoAccesoModel->contarIntentosPorOrigen(
-            $this->calcularHuella($ambito . ':' . $origen),
-            VENTANA_INTENTOS_SEGUNDOS
-        );
-        return $intentosOrigen < $maximoOrigen;
-    }
-
-    /**
-     * Registra un envío o fallo dentro de un ámbito.
-     *
-     * @param string $ambito Nombre corto del formulario.
-     * @param string $identificador Correo normalizado o id de la cuenta.
-     * @param string $origen IP del cliente.
-     * @return void
-     */
-    public function registrarIntentoAmbito(string $ambito, string $identificador, string $origen): void
-    {
-        $this->intentoAccesoModel->registrarIntentoFallido(
-            $this->calcularHuella($ambito . ':' . $identificador),
-            $this->calcularHuella($ambito . ':' . $origen)
-        );
-        $this->intentoAccesoModel->purgarIntentosAntiguos(RETENCION_INTENTOS_SEGUNDOS);
-    }
-
-    /**
-     * @param string $ambito Nombre corto del formulario.
-     * @param string $identificador Correo normalizado o id de la cuenta.
-     * @return void
-     */
-    public function reiniciarIntentosAmbito(string $ambito, string $identificador): void
-    {
-        $this->intentoAccesoModel->eliminarIntentosPorCorreo($this->calcularHuella($ambito . ':' . $identificador));
-    }
-
-    /**
-     * Reinicia el contador de la cuenta tras un login correcto.
-     *
-     * @param string $correoNormalizado Correo autenticado.
-     * @return void
-     */
-    public function reiniciarIntentosCuenta(string $correoNormalizado): void
-    {
-        $this->intentoAccesoModel->eliminarIntentosPorCorreo($this->calcularHuella($correoNormalizado));
     }
 }

@@ -197,7 +197,7 @@ final class ServicioSegundoFactor
         $codigosRecuperacion = $this->generarCodigosRecuperacion();
         $this->conexion->beginTransaction();
         try {
-            $guardado = $this->tokenCuentaModel->consumirToken((int) $tokenEnrolamiento['id_token_cuenta'])
+            $guardado = $this->tokenCuentaModel->consumirToken((int) $tokenEnrolamiento['id_token_cuenta'], $idUsuario)
                 && $this->usuarioModel->guardarSegundoFactor($idUsuario, $this->cifradorSecretos->cifrar($secreto, 'usuario:' . $idUsuario), $pasoAceptado);
             if (!$guardado) {
                 $this->conexion->rollBack();
@@ -217,7 +217,7 @@ final class ServicioSegundoFactor
         }
 
         $this->gestorSesion->eliminarTokenEnlace(GestorSesion::ENLACE_ENROLAMIENTO);
-        $this->abrirSesionAdministrativa($usuario, 'TOTP_CONFIGURACION');
+        $this->abrirSesionAdministrativa($usuario, 'TOTP_CONFIGURACION', $reserva);
         return ['resultado' => self::RESULTADO_EXITO, 'codigosRecuperacion' => $codigosRecuperacion];
     }
 
@@ -235,7 +235,8 @@ final class ServicioSegundoFactor
             return self::RESULTADO_SIN_PENDIENTE;
         }
         $idUsuario = (int) $usuario['id_usuario'];
-        if ($this->reservarIntento($idUsuario, $origen) === null) {
+        $reserva = $this->reservarIntento($idUsuario, $origen);
+        if ($reserva === null) {
             return self::RESULTADO_LIMITE_ALCANZADO;
         }
 
@@ -247,7 +248,7 @@ final class ServicioSegundoFactor
                 : null;
             $pasoAceptado = $secreto !== null ? SegundoFactorTotp::verificarCodigo($secreto, $codigoLimpio, $segundoFactor['ultimoPaso']) : null;
             if ($pasoAceptado !== null && $this->usuarioModel->registrarPasoSegundoFactor($idUsuario, $pasoAceptado)) {
-                $this->abrirSesionAdministrativa($usuario, 'TOTP');
+                $this->abrirSesionAdministrativa($usuario, 'TOTP', $reserva);
                 return self::RESULTADO_EXITO;
             }
         } else {
@@ -256,7 +257,7 @@ final class ServicioSegundoFactor
                 $this->auditoriaModel->registrarEventoAuditoria($idUsuario, AuditoriaModel::ACCION_CODIGO_RECUPERACION_USADO, 'usuario', $idUsuario, [
                     'codigosRestantes' => $this->codigoRecuperacionModel->contarCodigosDisponibles($idUsuario),
                 ]);
-                $this->abrirSesionAdministrativa($usuario, 'CODIGO_RECUPERACION');
+                $this->abrirSesionAdministrativa($usuario, 'CODIGO_RECUPERACION', $reserva);
                 return self::RESULTADO_EXITO;
             }
         }
@@ -305,12 +306,13 @@ final class ServicioSegundoFactor
     /**
      * @param array<string, mixed> $usuario Cuenta verificada.
      * @param string $metodo TOTP, TOTP_CONFIGURACION o CODIGO_RECUPERACION.
+     * @param int $reserva Reserva de esta petición; es la única que se retira (R-06).
      * @return void
      */
-    private function abrirSesionAdministrativa(array $usuario, string $metodo): void
+    private function abrirSesionAdministrativa(array $usuario, string $metodo, int $reserva): void
     {
         $idUsuario = (int) $usuario['id_usuario'];
-        $this->limitadorIntentos->reiniciarIntentosAmbito(self::AMBITO_LIMITE, (string) $idUsuario);
+        $this->limitadorIntentos->liberarReserva($reserva);
         $this->gestorSesion->crearSesion($usuario, true);
         $this->auditoriaModel->registrarEventoAuditoria($idUsuario, AuditoriaModel::ACCION_LOGIN_EXITOSO, 'usuario', $idUsuario, ['segundoFactor' => $metodo]);
     }

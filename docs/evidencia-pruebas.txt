@@ -1,5 +1,5 @@
 PAPC | Evidencia de pruebas automáticas
-Fecha: 2026-11-20 | Rama: feature/diseno | Especificación 1.3 + correcciones R-01 a R-08 + rediseño de las pantallas de acceso
+Fecha: 2026-11-20 | Rama: feature/diseno | Especificación 1.3 + correcciones R-01 a R-09 + rediseño de las pantallas de acceso
 Entorno: Windows 11, PHP 8.3.30 (Laragon), MariaDB 11.5 en 127.0.0.1:3398 (base desechable papc_db_pruebas), servidor embebido php -S.
 Comando: php tests/ejecutar-pruebas.php todas
 
@@ -61,6 +61,8 @@ Comando: php tests/ejecutar-pruebas.php todas
 [PASA] R04     R-04: emitir un enlace espera el bloqueo de la cuenta y deja uno solo vigente
 [PASA] R05     R-05: la confirmación con contraseña en administración tiene límite de intentos
 [PASA] R06     R-06: los intentos se reservan antes de comprobar: los que están en curso cuentan para el límite
+[PASA] R06b    R-06: un éxito retira solo su propia reserva; los fallos y reservas de otras peticiones siguen contando
+[PASA] R09     R-09: consumir y emitir enlaces a la vez bloquean en el mismo orden (cuenta o solicitud, luego enlace) y no se interbloquean
 [PASA] R07     R-07/AC-26: si el correo falla, la aprobación lo dice y se puede reenviar
 [PASA] P39     SEG-16: la bitácora reconstruye aprobaciones y cambios de rol sin contraseñas ni tokens
 [PASA] P22     Mínimo privilegio: la cuenta de la aplicación no altera la auditoría, no borra ni cambia la estructura
@@ -83,4 +85,4 @@ Comando: php tests/ejecutar-pruebas.php todas
 [PASA] P16     AC-23: archivos privados, correos de prueba y herramientas no accesibles por HTTP
 [PASA] P15b    AC-21: intentos repetidos por HTTP: 429 aun con la contraseña correcta
 
-Total: 79 | Pasan: 79 | Fallan: 0
+Total: 81 | Pasan: 81 | Fallan: 0

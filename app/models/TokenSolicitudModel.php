@@ -34,9 +34,7 @@ final class TokenSolicitudModel
             $this->conexion->beginTransaction();
         }
         try {
-            $bloqueo = $this->conexion->prepare('SELECT id_solicitud_acceso FROM solicitud_acceso WHERE id_solicitud_acceso = :idSolicitud FOR UPDATE');
-            $bloqueo->execute(['idSolicitud' => $idSolicitud]);
-            $bloqueo->fetchAll();
+            $this->bloquearSolicitud($idSolicitud);
 
             $sentenciaInvalidar = $this->conexion->prepare(
                 'UPDATE token_solicitud SET fecha_consumo_token_solicitud = NOW()
@@ -77,19 +75,42 @@ final class TokenSolicitudModel
     }
 
     /**
-     * Consume el token una sola vez.
+     * Consume el token una sola vez (UPDATE condicional).
+     *
+     * R-09: primero bloquea la solicitud y después el token, el mismo orden
+     * que crearToken(). Debe llamarse dentro de la transacción que después
+     * actualiza la solicitud.
      *
      * @param int $idToken Token.
+     * @param int $idSolicitud Solicitud destinataria esperada.
      * @return bool true solo para la primera petición que lo consume.
+     * @throws LogicException Si no hay una transacción abierta.
      */
-    public function consumirToken(int $idToken): bool
+    public function consumirToken(int $idToken, int $idSolicitud): bool
     {
+        if (!$this->conexion->inTransaction()) {
+            throw new LogicException('consumirToken() requiere una transacción abierta.');
+        }
+        $this->bloquearSolicitud($idSolicitud);
         $sentencia = $this->conexion->prepare(
             'UPDATE token_solicitud SET fecha_consumo_token_solicitud = NOW()
-             WHERE id_token_solicitud = :idToken AND fecha_consumo_token_solicitud IS NULL
-               AND fecha_expiracion_token_solicitud > NOW()'
+             WHERE id_token_solicitud = :idToken AND id_solicitud_acceso_destinataria = :idSolicitud
+               AND fecha_consumo_token_solicitud IS NULL AND fecha_expiracion_token_solicitud > NOW()'
         );
-        $sentencia->execute(['idToken' => $idToken]);
+        $sentencia->execute(['idToken' => $idToken, 'idSolicitud' => $idSolicitud]);
         return $sentencia->rowCount() === 1;
+    }
+
+    /**
+     * Bloquea la fila de la solicitud hasta el fin de la transacción (R-04, R-09).
+     *
+     * @param int $idSolicitud Solicitud.
+     * @return void
+     */
+    private function bloquearSolicitud(int $idSolicitud): void
+    {
+        $bloqueo = $this->conexion->prepare('SELECT id_solicitud_acceso FROM solicitud_acceso WHERE id_solicitud_acceso = :idSolicitud FOR UPDATE');
+        $bloqueo->execute(['idSolicitud' => $idSolicitud]);
+        $bloqueo->fetchAll();
     }
 }
