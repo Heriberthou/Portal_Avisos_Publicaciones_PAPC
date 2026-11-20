@@ -19,7 +19,7 @@ $errorContrasena = $errores['contrasena'] ?? '';
 require RUTA_RAIZ . '/app/views/parciales/acceso-inicio.php';
 ?>
 <h1 class="titulo-acceso">Iniciar sesión</h1>
-<p class="subtitulo-acceso">Ingrese a su cuenta para participar en la comunidad universitaria.</p>
+<p class="subtitulo-acceso"><?= Vista::escapar(NOMBRE_APLICACION) ?></p>
 
 <?php if (!empty($datosVista['mensajeError'])): ?>
     <p class="mensaje mensaje-error" role="alert"><?= Vista::escapar($datosVista['mensajeError']) ?></p>
@@ -29,10 +29,10 @@ require RUTA_RAIZ . '/app/views/parciales/acceso-inicio.php';
     <?= Vista::campoTokenCsrf() ?>
 
     <div class="campo campo-ancho">
-        <label for="correo-electronico"><?= Vista::icono('correo') ?>Correo electrónico</label>
+        <label for="correo-electronico">Correo electrónico</label>
         <input id="correo-electronico" name="correo_electronico" type="email" required
                maxlength="<?= LONGITUD_MAXIMA_CORREO_ELECTRONICO ?>" autocomplete="username"
-               placeholder="Escriba su correo electrónico" data-validar="correo"
+               placeholder="nombre@ejemplo.com" data-validar="correo"
                aria-describedby="error-correo-electronico"
                <?= $errorCorreo !== '' ? 'aria-invalid="true"' : '' ?>
                value="<?= Vista::escapar($datosVista['correoPrevio'] ?? '') ?>">
@@ -40,11 +40,11 @@ require RUTA_RAIZ . '/app/views/parciales/acceso-inicio.php';
     </div>
 
     <div class="campo campo-ancho">
-        <label for="contrasena"><?= Vista::icono('candado') ?>Contraseña</label>
+        <label for="contrasena">Contraseña</label>
         <div class="control-contrasena">
             <input id="contrasena" name="contrasena" type="password" required
                    maxlength="<?= LONGITUD_MAXIMA_CONTRASENA ?>" autocomplete="current-password"
-                   placeholder="Escriba su contraseña" data-validar="requerido"
+                   data-validar="requerido"
                    data-mensaje-vacio="Escriba su contraseña."
                    aria-describedby="error-contrasena"
                    <?= $errorContrasena !== '' ? 'aria-invalid="true"' : '' ?>>
@@ -55,12 +55,12 @@ require RUTA_RAIZ . '/app/views/parciales/acceso-inicio.php';
     </div>
 
     <div class="acciones-acceso">
-        <button type="submit" class="boton-principal"><?= Vista::icono('entrar') ?>Iniciar sesión</button>
+        <button type="submit" class="boton-principal">Entrar</button>
     </div>
 </form>
 
 <p class="invitacion-acceso">
-    ¿Aún no tiene cuenta?
+    ¿No tiene cuenta?
     <a class="enlace-destacado" href="<?= Vista::escapar(Vista::url('/solicitar-acceso')) ?>">Solicitar acceso</a>
 </p>
 <?php require RUTA_RAIZ . '/app/views/parciales/acceso-fin.php'; ?>

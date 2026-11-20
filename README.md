@@ -122,10 +122,10 @@ Detalle y respuesta de cada hallazgo en `docs/revision-codex.md`.
 - **Sin portada.** La dirección principal (`/`) lleva directo a iniciar sesión (o a `/inicio` si ya hay sesión).
   Se eliminó `bienvenida.php`: en esta etapa lo importante es el acceso.
 - **Un solo diseño para todas las pantallas de acceso** (iniciar sesión, solicitar acceso, activar cuenta,
-  recuperar contraseña y verificación en dos pasos): fondo de playa al atardecer y una tarjeta de dos columnas
-  (identidad de la universidad a la izquierda y el formulario a la derecha). En celular la identidad pasa arriba
-  en una franja compacta. Las imágenes `public/img/fondo-acceso.svg` y `ola-panel.svg` son ilustraciones propias,
-  sin derechos de terceros.
+  recuperar contraseña y verificación en dos pasos): foto de la entrada del Campus Puerto Escondido con un
+  filtro cálido y desenfoque, y una tarjeta de vidrio centrada con el escudo, el nombre de la universidad y el
+  formulario. Pie en franja oscura con © y los enlaces a Ayuda y Aviso de privacidad (sin repetir nombres).
+  Imágenes: `public/img/campus-puerto-escondido.jpg` y `public/img/escudo-umar.png`, proporcionadas por el equipo.
 - **Estructura del código:** las vistas de acceso abren y cierran con `parciales/acceso-inicio.php` y
   `parciales/acceso-fin.php`, así que la tarjeta no se repite en cada archivo. `Vista::usarDiseno()` elige el
   diseño, `Vista::icono()` dibuja los íconos y `portal.css` quedó ordenado en 8 secciones numeradas.

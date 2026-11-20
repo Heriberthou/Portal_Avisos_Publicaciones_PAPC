@@ -34,6 +34,14 @@
     --fuente-texto: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --radio: 8px;
     --sombra-suave: 0 2px 6px rgba(20, 47, 79, 0.08);
+
+    /* Pantallas de acceso (tarjeta de vidrio sobre la foto del campus). */
+    --acceso-azul-900: #0b2545;
+    --acceso-azul-700: #13438a;
+    --acceso-azul-600: #1d56b0;
+    --acceso-azul-500: #2a6fd6;
+    --acceso-tinta: #101b2b;
+    --acceso-gris: #4a5a70;
 }
 
 /* ===================== 2. Base ===================== */
@@ -224,46 +232,134 @@ summary:focus-visible { outline: 3px solid var(--umar-marino); outline-offset: 2
 .contenido-informativo h2 { font-size: 1.15rem; margin-top: 22px; }
 
 /* ===================== 5. Diseño de acceso ===================== */
-.diseno-acceso { background: var(--color-fondo); }
+/* Tarjeta de vidrio centrada sobre la foto de la entrada del campus. */
 body { min-height: 100vh; display: flex; flex-direction: column; }
 .contenedor-principal { width: 100%; flex: 1; }
-.diseno-acceso .contenedor-principal { max-width: none; margin: 0; padding: 0; display: grid; align-items: center; }
-.pantalla-acceso { display: grid; place-items: center; padding: 48px 24px; }
-.tarjeta-acceso { width: min(100%, 1080px); display: grid; grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr); background: #fff; border: 1px solid #dce3eb; border-radius: 18px; box-shadow: 0 18px 55px rgba(20, 47, 79, 0.08); overflow: hidden; }
-.panel-institucional { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 56px 40px; background: var(--umar-marino); color: #fff; position: relative; }
-.panel-institucional::after { content: ''; width: 56px; height: 3px; background: var(--umar-oro); margin-top: 32px; }
-.logo-institucional { display: block; width: 100px; height: auto; padding: 8px; background: #fff; border-radius: 12px; }
-.nombre-universidad { margin: 28px 0 6px; font-size: 1.8rem; font-weight: 650; line-height: 1.2; letter-spacing: -0.04em; }
-.nombre-campus { margin: 0; font-size: 0.94rem; color: #d6e1ed; }
-.nombre-sistema { display: flex; align-items: flex-start; gap: 12px; margin: 40px 0 0; padding-top: 24px; border-top: 1px solid #52667f; font-size: 1.05rem; line-height: 1.6; max-width: 310px; }
-.icono-sistema { width: 26px; height: 26px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; }
-.panel-formulario { min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 48px clamp(24px, 4vw, 56px); }
-.titulo-acceso { margin: 0; color: var(--umar-marino); font-size: clamp(1.8rem, 3vw, 2.2rem); letter-spacing: -0.035em; line-height: 1.2; }
-.subtitulo-acceso { margin: 12px 0 28px; color: var(--color-secundario); line-height: 1.6; font-size: 0.96rem; }
+
+.diseno-acceso { background: #7fb2e5; overflow-x: hidden; }
+/* Foto con filtro cálido y velo claro detrás de la tarjeta (decorativos). */
+.diseno-acceso::before,
+.diseno-acceso::after { content: ''; position: fixed; inset: 0; pointer-events: none; }
+.diseno-acceso::before {
+    z-index: -2;
+    background: url("../img/campus-puerto-escondido.jpg") center 40% / cover no-repeat;
+    filter: brightness(1.12) saturate(1.28) contrast(1.04) blur(2.5px);
+    transform: scale(1.03);
+}
+.diseno-acceso::after {
+    z-index: -1;
+    background:
+        radial-gradient(ellipse 42% 62% at 50% 46%, rgba(235, 245, 255, 0.62), rgba(235, 245, 255, 0.18) 70%, transparent 100%),
+        radial-gradient(ellipse 60% 55% at 85% 0%, rgba(255, 226, 170, 0.55), transparent 70%),
+        linear-gradient(180deg, rgba(110, 175, 235, 0.38) 0%, rgba(110, 175, 235, 0.08) 55%, rgba(255, 190, 120, 0.16) 100%);
+}
+
+.diseno-acceso .contenedor-principal { max-width: none; margin: 0; padding: 0; display: grid; }
+.pantalla-acceso { display: grid; place-items: center; padding: 28px 24px; }
+.tarjeta-acceso {
+    width: 100%;
+    max-width: 400px;
+    padding: 36px 34px 30px;
+    background: rgba(255, 255, 255, 0.84);
+    -webkit-backdrop-filter: blur(38px) saturate(0.55) brightness(1.08);
+    backdrop-filter: blur(38px) saturate(0.55) brightness(1.08);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    border-radius: 20px;
+    box-shadow: 0 20px 50px rgba(11, 37, 69, 0.28), 0 2px 8px rgba(11, 37, 69, 0.12);
+    animation: aparecer-tarjeta 0.55s ease-out both;
+}
+/* Formularios con campos en dos columnas (solicitar acceso): tarjeta más ancha. */
+.tarjeta-acceso:has(.rejilla-campos > .campo:not(.campo-ancho)) { max-width: 560px; }
+@keyframes aparecer-tarjeta { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+.marca-acceso { text-align: center; margin-bottom: 22px; }
+.logo-institucional { display: block; width: auto; height: 88px; margin: 0 auto 12px; }
+.nombre-universidad { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--acceso-azul-900); }
+.nombre-campus { margin: 2px 0 0; font-size: 0.85rem; color: var(--acceso-gris); }
+
+.panel-formulario { min-width: 0; display: flex; flex-direction: column; }
+.titulo-acceso { margin: 0 0 4px; text-align: center; font-size: 1.35rem; font-weight: 700; color: var(--acceso-tinta); }
+.subtitulo-acceso { margin: 0 0 22px; text-align: center; font-size: 0.84rem; line-height: 1.5; color: var(--acceso-gris); }
+.diseno-acceso .rejilla-campos { gap: 15px 16px; }
+.diseno-acceso .campo > label { font-size: 0.8rem; font-weight: 600; color: var(--acceso-tinta); }
 .diseno-acceso .rejilla-campos input[type='text'],
 .diseno-acceso .rejilla-campos input[type='email'],
-.diseno-acceso .rejilla-campos input[type='password'] { min-height: 48px; border-radius: 8px; background: #fff; border-color: #8b99aa; color: var(--color-texto); }
-.diseno-acceso .rejilla-campos input::placeholder { color: #657387; opacity: 1; }
-.diseno-acceso .rejilla-campos input:focus { border-color: #245c91; outline: 3px solid #b9d5ef; outline-offset: 2px; }
+.diseno-acceso .rejilla-campos input[type='password'] {
+    min-height: 46px;
+    padding: 12px 14px;
+    font-size: 0.92rem;
+    color: var(--acceso-tinta);
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(16, 27, 43, 0.14);
+    border-radius: 10px;
+    box-shadow: none;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.diseno-acceso .rejilla-campos .control-contrasena input { padding-right: 76px; }
+.diseno-acceso .rejilla-campos input::placeholder { color: #6f7d90; opacity: 1; }
+.diseno-acceso .rejilla-campos input:focus {
+    background: #fff;
+    border-color: var(--acceso-azul-500);
+    box-shadow: 0 0 0 3px rgba(42, 111, 214, 0.22);
+    outline: none;
+}
 .diseno-acceso .rejilla-campos input[aria-invalid='true'] { border-color: var(--color-error); background: #fff8f7; }
-.diseno-acceso .grupo-opciones { border-color: #c9d3df; border-radius: 8px; background: #f7f9fc; }
-.diseno-acceso .grupo-opciones input[type='radio'] { accent-color: var(--umar-marino); }
+.diseno-acceso .boton-mostrar { color: var(--acceso-azul-700); font-size: 0.76rem; }
+.diseno-acceso .boton-mostrar:hover { background: rgba(19, 67, 138, 0.09); }
+.diseno-acceso .grupo-opciones { border: 1px solid rgba(16, 27, 43, 0.14); border-radius: 10px; background: rgba(255, 255, 255, 0.9); }
+.diseno-acceso .grupo-opciones input[type='radio'] { accent-color: var(--acceso-azul-600); }
 .diseno-acceso .grupo-opciones label { min-height: 44px; }
 .diseno-acceso .grupo-opciones.grupo-invalido { border-color: var(--color-error); }
-.enlace-secundario { align-self: flex-end; font-size: 0.9rem; margin-top: 2px; }
+.enlace-secundario { align-self: flex-end; font-size: 0.82rem; margin-top: 2px; color: var(--acceso-azul-700); text-decoration: none; }
+.enlace-secundario:hover { text-decoration: underline; }
+/* Diseño limpio: sin íconos en etiquetas ni en el botón principal. */
+.diseno-acceso .campo > label .icono,
+.diseno-acceso .boton-principal .icono { display: none; }
 .acciones-acceso { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin-top: 8px; }
 .acciones-acceso .texto-secundario { margin: 0; text-align: center; }
 .acciones-acceso .enlaces-pie { justify-content: center; }
-.diseno-acceso .boton-principal { min-height: 48px; border-radius: 8px; background: var(--umar-marino); color: #fff; border: 1px solid var(--umar-marino); font-size: 1rem; box-shadow: none; }
-.diseno-acceso .boton-principal:hover { background: #24496e; }
-.invitacion-acceso { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin: 28px 0 0; padding-top: 24px; border-top: 1px solid #e1e7ef; color: var(--color-secundario); font-size: 0.92rem; }
-.enlace-destacado { display: inline-flex; align-items: center; min-height: 44px; }
-.pie-institucional { width: min(100%, 1128px); margin: 0 auto; padding: 20px 24px 28px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 24px; color: var(--color-secundario); font-size: 0.8rem; }
+.diseno-acceso .boton-principal {
+    min-height: 48px;
+    padding: 13px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(180deg, var(--acceso-azul-500), var(--acceso-azul-600));
+    border: 0;
+    border-radius: 10px;
+    box-shadow: 0 8px 18px rgba(29, 86, 176, 0.35);
+    transition: filter 0.15s, transform 0.1s;
+}
+.diseno-acceso .boton-principal:hover { filter: brightness(1.07); }
+.diseno-acceso .boton-principal:active { transform: translateY(1px); }
+.diseno-acceso .boton-principal:focus-visible { outline: 3px solid rgba(42, 111, 214, 0.4); outline-offset: 2px; }
+.diseno-acceso .boton-secundario { border-radius: 10px; }
+.invitacion-acceso { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; margin: 18px 0 0; color: var(--acceso-gris); font-size: 0.84rem; }
+.enlace-destacado { display: inline-flex; align-items: center; min-height: 44px; color: var(--acceso-azul-700); text-decoration: none; }
+.enlace-destacado:hover { text-decoration: underline; }
+.diseno-acceso .mensaje { font-size: 0.88rem; }
+.diseno-acceso .lista-pasos li::marker { color: var(--acceso-azul-700); font-weight: 700; }
+
+/* Pie: franja de vidrio oscuro en acceso; discreto en las páginas internas. */
+.pie-institucional { width: min(100%, 1128px); margin: 0 auto; padding: 12px 24px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px 24px; color: var(--color-secundario); font-size: 0.8rem; }
 .pie-institucional p { margin: 0; }
-.pie-institucional nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
-.pie-institucional a { display: inline-flex; align-items: center; min-height: 44px; color: var(--color-secundario); font-weight: 500; text-underline-offset: 4px; }
-.pie-institucional a:hover { color: var(--umar-marino); }
-.diseno-acceso .lista-pasos li::marker { color: var(--umar-marino); font-weight: 700; }
+.pie-institucional nav { display: flex; flex-wrap: wrap; gap: 0 22px; }
+.pie-institucional a { display: inline-flex; align-items: center; min-height: 44px; color: var(--color-secundario); font-weight: 500; text-decoration: none; border-bottom: 1px solid transparent; }
+.pie-institucional a:hover { color: var(--umar-marino); border-bottom-color: currentColor; }
+.diseno-acceso .pie-institucional {
+    width: 100%;
+    max-width: none;
+    padding: 6px max(24px, calc((100% - 1100px) / 2));
+    background: rgba(11, 37, 69, 0.62);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.85);
+}
+.diseno-acceso .pie-institucional a { color: #fff; }
+.diseno-acceso .pie-institucional a:hover,
+.diseno-acceso .pie-institucional a:focus-visible { color: #fff; border-bottom-color: rgba(255, 255, 255, 0.85); }
+.diseno-acceso .pie-institucional a:focus-visible { outline-color: #fff; }
 
 /* ===================== 6. Verificación en dos pasos ===================== */
 .clave-secreta {
@@ -310,35 +406,13 @@ body { min-height: 100vh; display: flex; flex-direction: column; }
 .dato-detalle { display: inline-block; margin-right: 10px; font-size: 0.85em; }
 
 /* ===================== 8. Adaptación a pantallas pequeñas ===================== */
-@media (max-width: 860px) {
-    /* La identidad pasa arriba, en una franja compacta. */
-    .tarjeta-acceso { grid-template-columns: 1fr; }
-    .panel-institucional {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        column-gap: 16px;
-        align-items: center;
-        padding: 20px 24px;
-        text-align: left;
-        border-right: 0;
-        border-bottom: 1px solid var(--color-borde);
-        background: var(--umar-marino);
-    }
-    .logo-institucional { grid-row: span 2; width: 76px; padding: 6px; border-radius: 16px; }
-    .nombre-universidad { margin: 0; font-size: 1.35rem; align-self: end; }
-    .nombre-campus { font-size: 0.9rem; align-self: start; }
-    .nombre-campus::after { display: none; }
-    .nombre-sistema { display: none; }
-    .panel-formulario { padding: 28px 24px 24px; }
-}
-
 @media (max-width: 560px) {
-    .pantalla-acceso { padding: 12px; place-items: start center; }
-    .tarjeta-acceso { border-radius: 12px; }
+    .pantalla-acceso { padding: 18px 14px; }
+    .tarjeta-acceso { padding: 30px 22px 24px; }
     .rejilla-campos { grid-template-columns: 1fr; }
-    .panel-formulario { padding: 24px 18px 20px; }
     .decisiones-solicitud { grid-template-columns: 1fr; }
     .tarjeta-amplia { overflow-x: auto; }
 }
 
-@media (max-width: 860px) { .panel-institucional::after { display: none; } .pie-institucional { justify-content: center; text-align: center; } }
+@media (max-width: 560px) { .pie-institucional { justify-content: center; text-align: center; } }
+@media (prefers-reduced-motion: reduce) { .tarjeta-acceso { animation: none; } }
