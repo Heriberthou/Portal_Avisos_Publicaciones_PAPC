@@ -132,7 +132,7 @@ final class ValidadorEntrada
             $errores['tipo_integrante'] = 'Seleccione si es alumno o profesor.';
         }
 
-        $errorIdentificador = self::validarIdentificador($identificador);
+        $errorIdentificador = self::validarIdentificador($identificador, $tipoIntegrante);
         if ($errorIdentificador !== null) {
             $errores['identificador_institucional'] = $errorIdentificador;
         }
@@ -293,16 +293,25 @@ final class ValidadorEntrada
      * @param string|null $identificador Identificador normalizado.
      * @return string|null Mensaje de error o null si es válido.
      */
-    private static function validarIdentificador(?string $identificador): ?string
+    private static function validarIdentificador(?string $identificador, ?string $tipoIntegrante = null): ?string
     {
+        $nombreDato = match ($tipoIntegrante) {
+            'ALUMNO' => 'La matrícula',
+            'PROFESOR' => 'El número de personal',
+            default => 'El identificador institucional',
+        };
         if ($identificador === null) {
-            return 'Escriba su matrícula o número de personal.';
+            return match ($tipoIntegrante) {
+                'ALUMNO' => 'Escriba su matrícula.',
+                'PROFESOR' => 'Escriba su número de personal.',
+                default => 'Escriba su identificador institucional.',
+            };
         }
         $longitud = mb_strlen($identificador);
         if ($longitud < LONGITUD_MINIMA_IDENTIFICADOR_INSTITUCIONAL || $longitud > LONGITUD_MAXIMA_IDENTIFICADOR_INSTITUCIONAL
             || preg_match(self::PATRON_IDENTIFICADOR, $identificador) !== 1) {
             return sprintf(
-                'La matrícula o número de personal debe tener entre %d y %d letras, números o guiones.',
+                $nombreDato . ' debe tener entre %d y %d letras, números o guiones.',
                 LONGITUD_MINIMA_IDENTIFICADOR_INSTITUCIONAL,
                 LONGITUD_MAXIMA_IDENTIFICADOR_INSTITUCIONAL
             );

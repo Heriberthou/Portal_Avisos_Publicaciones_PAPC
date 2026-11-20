@@ -14,6 +14,11 @@ declare(strict_types=1);
 $valoresPrevios = $datosVista['valoresPrevios'] ?? [];
 $errores = $datosVista['errores'] ?? [];
 $tipoPrevio = $valoresPrevios['tipo_integrante'] ?? '';
+$etiquetaIdentificador = match ($tipoPrevio) {
+    'ALUMNO' => 'Matrícula',
+    'PROFESOR' => 'Número de personal',
+    default => 'Identificador institucional',
+};
 
 /**
  * Párrafo de error del campo (siempre existe, para anunciar mensajes).
@@ -88,15 +93,15 @@ $invalido = static fn (array $errores, string $campo): string => isset($errores[
     </div>
 
     <div class="campo campo-ancho">
-        <label for="identificador-institucional"><?= Vista::icono('credencial') ?>Matrícula o número de personal</label>
+        <label for="identificador-institucional"><?= Vista::icono('credencial') ?><span id="etiqueta-identificador"><?= Vista::escapar($etiquetaIdentificador) ?></span></label>
         <input id="identificador-institucional" name="identificador_institucional" type="text" required
                minlength="<?= LONGITUD_MINIMA_IDENTIFICADOR_INSTITUCIONAL ?>" maxlength="<?= LONGITUD_MAXIMA_IDENTIFICADOR_INSTITUCIONAL ?>"
                autocomplete="off" spellcheck="false" data-validar="identificador"
                aria-describedby="ayuda-identificador error-identificador-institucional" <?= $invalido($errores, 'identificador_institucional') ?>
                value="<?= Vista::escapar($valoresPrevios['identificador_institucional'] ?? '') ?>">
-        <small class="texto-secundario" id="ayuda-identificador">
-            Alumno: escriba su matrícula tal como aparece en su registro escolar.
-            Profesor: escriba su número de personal; si no lo tiene, consulte la <a href="<?= Vista::escapar(Vista::url('/ayuda')) ?>">Ayuda</a>.
+        <small class="texto-secundario" id="ayuda-identificador" aria-live="polite">
+            <span id="descripcion-identificador"><?php if ($tipoPrevio === 'ALUMNO'): ?>Escriba su matrícula tal como aparece en su registro escolar.<?php elseif ($tipoPrevio === 'PROFESOR'): ?>Escriba el número de personal asignado por la universidad.<?php else: ?>Seleccione Alumno o Profesor para identificar el dato que debe escribir.<?php endif; ?></span>
+            <a href="<?= Vista::escapar(Vista::url('/ayuda')) ?>">¿Dónde encuentro este dato?</a>
         </small>
         <?= $errorCampo($errores, 'identificador_institucional') ?>
     </div>

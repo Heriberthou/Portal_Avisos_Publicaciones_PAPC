@@ -126,15 +126,21 @@
 
             case 'identificador':
                 // Mismo criterio que ValidadorEntrada::validarIdentificador().
+                var tipoSeleccionado = formulario.querySelector('input[name="tipo_integrante"]:checked');
+                var nombreDato = tipoSeleccionado && tipoSeleccionado.value === 'ALUMNO' ? 'La matrícula'
+                    : (tipoSeleccionado && tipoSeleccionado.value === 'PROFESOR' ? 'El número de personal' : 'El identificador institucional');
                 valor = valor.replace(/\s+/g, '').toUpperCase();
                 if (valor === '') {
-                    return 'Escriba su matrícula o identificador institucional.';
+                    return tipoSeleccionado && tipoSeleccionado.value === 'ALUMNO'
+                        ? 'Escriba su matrícula.'
+                        : (tipoSeleccionado && tipoSeleccionado.value === 'PROFESOR'
+                            ? 'Escriba su número de personal.' : 'Seleccione su tipo de integrante y escriba su identificador institucional.');
                 }
                 minimo = leerLimite(campo, 'minlength', 4);
                 maximo = leerLimite(campo, 'maxlength', 20);
                 longitud = contarCaracteres(valor);
                 if (longitud < minimo || longitud > maximo || !/^[A-Z0-9][A-Z0-9\-]*$/.test(valor)) {
-                    return 'El identificador debe tener entre ' + minimo + ' y ' + maximo + ' letras, números o guiones.';
+                    return nombreDato + ' debe tener entre ' + minimo + ' y ' + maximo + ' letras, números o guiones.';
                 }
                 return '';
 
@@ -264,6 +270,29 @@
 
         var campos = Array.prototype.slice.call(formulario.querySelectorAll('[data-validar]'));
         var tocados = new WeakSet();
+
+        // Un solo dato persistido; la etiqueta y la ayuda dependen de la persona.
+        var identificador = formulario.querySelector('#identificador-institucional');
+        if (identificador) {
+            var actualizarIdentificador = function () {
+                var seleccionado = formulario.querySelector('input[name="tipo_integrante"]:checked');
+                var tipo = seleccionado ? seleccionado.value : '';
+                document.getElementById('etiqueta-identificador').textContent = tipo === 'ALUMNO'
+                    ? 'Matrícula' : (tipo === 'PROFESOR' ? 'Número de personal' : 'Identificador institucional');
+                document.getElementById('descripcion-identificador').textContent = tipo === 'ALUMNO'
+                    ? 'Escriba su matrícula tal como aparece en su registro escolar.'
+                    : (tipo === 'PROFESOR' ? 'Escriba el número de personal asignado por la universidad.'
+                        : 'Seleccione Alumno o Profesor para identificar el dato que debe escribir.');
+                identificador.placeholder = tipo === 'ALUMNO' ? 'Su matrícula'
+                    : (tipo === 'PROFESOR' ? 'Su número de personal' : 'Su identificador institucional');
+                if (tocados.has(identificador)) { validarCampo(identificador); }
+            };
+            formulario.querySelectorAll('input[name="tipo_integrante"]').forEach(function (opcion) {
+                opcion.addEventListener('change', actualizarIdentificador);
+            });
+            actualizarIdentificador();
+            window.addEventListener('pageshow', actualizarIdentificador);
+        }
 
         // Los campos que el servidor ya marcó con error se consideran tocados.
         campos.forEach(function (campo) {

@@ -6,17 +6,12 @@
  *   2. Base
  *   3. Componentes comunes (botones, campos, mensajes, íconos)
  *   4. Diseño general (páginas internas: barra superior y tarjetas)
- *   5. Diseño de acceso (fondo de playa y tarjeta de vidrio)
+ *   5. Diseño de acceso (panel institucional y formulario claro)
  *   6. Verificación en dos pasos
  *   7. Administración
  *   8. Adaptación a pantallas pequeñas
  *
- * Contraste (WCAG 1.4.3 y 1.4.11), calculado sobre el color más claro que
- * puede quedar detrás del vidrio:
- *   - Texto blanco sobre la tarjeta de acceso: mayor de 7:1.
- *   - Texto blanco sobre el botón violeta (#6d4bea a #5338c9): 5.5:1 o más.
- *   - Marino sobre el botón dorado de las páginas internas: 5.6:1.
- *   - El indicador de foco usa dorado claro (acceso) o marino (general).
+ * Paleta compartida: marino para acciones, blanco para superficies y gris para texto secundario.
  */
 
 /* ===================== 1. Variables de diseño ===================== */
@@ -35,21 +30,8 @@
     --color-aviso: #9a6700;
     --color-borde: #d2d6dc;
 
-    /* Pantallas de acceso */
-    --acceso-vidrio: rgba(32, 28, 82, 0.74);
-    --acceso-borde: rgba(255, 255, 255, 0.28);
-    --acceso-texto: #ffffff;
-    --acceso-texto-suave: rgba(255, 255, 255, 0.86);
-    --acceso-enlace: #e6ddff;
-    --acceso-campo: rgba(255, 255, 255, 0.12);
-    --acceso-campo-borde: rgba(255, 255, 255, 0.5);
-    --acceso-violeta: #6d4bea;
-    --acceso-violeta-oscuro: #5338c9;
-    --acceso-foco: #ffd166;
-    --acceso-error: #ffcdc5;
-
-    --fuente-titulo: "Playfair Display", Georgia, "Times New Roman", serif;
-    --fuente-texto: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --fuente-titulo: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --fuente-texto: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --radio: 8px;
     --sombra-suave: 0 2px 6px rgba(20, 47, 79, 0.08);
 }
@@ -114,7 +96,7 @@ summary:focus-visible { outline: 3px solid var(--umar-marino); outline-offset: 2
     border: 1px solid var(--umar-oro);
     color: var(--umar-marino);
 }
-.boton-principal:hover { background: var(--umar-oro-claro); border-color: var(--umar-oro-claro); }
+.boton-principal:hover { background: #24496e; border-color: #24496e; }
 .boton-principal[disabled] { opacity: 0.75; cursor: progress; }
 .boton-secundario { background: #fff; color: var(--umar-azul); border: 1px solid var(--umar-azul); }
 .boton-secundario:hover { background: var(--umar-azul); color: #fff; }
@@ -206,7 +188,7 @@ summary:focus-visible { outline: 3px solid var(--umar-marino); outline-offset: 2
 .enlaces-pie { display: flex; flex-wrap: wrap; gap: 8px 20px; }
 
 /* ===================== 4. Diseño general (páginas internas) ===================== */
-.diseno-general { background: var(--color-fondo) url("../img/patron-olas.svg") repeat; }
+.diseno-general { background: var(--color-fondo); }
 
 .barra-superior {
     display: flex;
@@ -242,227 +224,46 @@ summary:focus-visible { outline: 3px solid var(--umar-marino); outline-offset: 2
 .contenido-informativo h2 { font-size: 1.15rem; margin-top: 22px; }
 
 /* ===================== 5. Diseño de acceso ===================== */
-/* El fondo va en una capa fija aparte: background-attachment: fixed falla en móviles. */
-.diseno-acceso { background: #2a2468; color: var(--acceso-texto); }
-.diseno-acceso::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    background: #2a2468 url("../img/fondo-acceso.svg") center / cover no-repeat;
-}
-.diseno-acceso .contenedor-principal { max-width: none; margin: 0; padding: 0; }
-
-.pantalla-acceso {
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: clamp(16px, 4vw, 48px) 16px;
-}
-
-.tarjeta-acceso {
-    width: min(100%, 1020px);
-    display: grid;
-    grid-template-columns: minmax(260px, 2fr) 3fr;
-    background: var(--acceso-vidrio);
-    -webkit-backdrop-filter: blur(16px) saturate(1.2);
-    backdrop-filter: blur(16px) saturate(1.2);
-    border: 1px solid var(--acceso-borde);
-    border-radius: 28px;
-    box-shadow: 0 24px 60px rgba(10, 8, 40, 0.45);
-    overflow: hidden;
-}
-
-/* Columna izquierda: identidad de la universidad. */
-.panel-institucional {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 48px 32px 120px;
-    text-align: center;
-    border-right: 1px solid var(--acceso-borde);
-    background: url("../img/ola-panel.svg") bottom / 100% 120px no-repeat;
-}
-.logo-institucional {
-    display: block;
-    width: 150px;
-    height: auto;
-    padding: 12px;
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 24px;
-    box-shadow: 0 8px 24px rgba(10, 8, 40, 0.3);
-}
-.nombre-universidad {
-    margin: 20px 0 0;
-    font-family: var(--fuente-titulo);
-    font-size: 1.9rem;
-    line-height: 1.2;
-}
-.nombre-campus {
-    margin: 0;
-    font-size: 1rem;
-    letter-spacing: 0.08em;
-    color: var(--acceso-texto-suave);
-}
-.nombre-campus::after {
-    content: "";
-    display: block;
-    width: 120px;
-    height: 3px;
-    margin: 14px auto 0;
-    border-radius: 3px;
-    background: linear-gradient(90deg, transparent, #b9a4ff, transparent);
-}
-.nombre-sistema {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    max-width: 300px;
-    margin: 24px 0 0;
-    padding-top: 22px;
-    border-top: 1px solid var(--acceso-borde);
-    font-family: var(--fuente-titulo);
-    font-size: 1.2rem;
-    line-height: 1.3;
-    text-align: left;
-}
-.icono-sistema {
-    width: 44px;
-    height: 44px;
-    flex: none;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.4;
-    stroke-linejoin: round;
-}
-
-/* Columna derecha: contenido de cada pantalla. */
-.panel-formulario {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 48px clamp(24px, 5vw, 56px) 32px;
-    min-width: 0;
-}
-.titulo-acceso {
-    margin: 0 0 6px;
-    font-size: clamp(2rem, 4vw, 2.6rem);
-    line-height: 1.15;
-    color: var(--acceso-texto);
-}
-.titulo-acceso::after {
-    content: "";
-    display: block;
-    width: 72px;
-    height: 3px;
-    margin-top: 10px;
-    border-radius: 3px;
-    background: #b9a4ff;
-}
-.subtitulo-acceso { margin: 8px 0 24px; color: var(--acceso-texto-suave); }
-
-.diseno-acceso h2 { color: var(--acceso-texto); }
-.diseno-acceso a { color: var(--acceso-enlace); }
-.diseno-acceso a:hover { color: #fff; }
-.diseno-acceso a:focus-visible,
-.diseno-acceso button:focus-visible,
-.diseno-acceso input:focus-visible,
-.diseno-acceso summary:focus-visible { outline-color: var(--acceso-foco); }
-.diseno-acceso .texto-secundario { color: var(--acceso-texto-suave); }
-.diseno-acceso .mensaje a { color: inherit; }
-
-.diseno-acceso .rejilla-campos input[type="text"],
-.diseno-acceso .rejilla-campos input[type="email"],
-.diseno-acceso .rejilla-campos input[type="password"] {
-    background: var(--acceso-campo);
-    border-color: var(--acceso-campo-borde);
-    border-radius: 12px;
-    color: var(--acceso-texto);
-}
-.diseno-acceso .rejilla-campos input::placeholder { color: rgba(255, 255, 255, 0.72); opacity: 1; }
-.diseno-acceso .rejilla-campos input:focus {
-    outline: none;
-    border-color: var(--acceso-foco);
-    box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.35);
-}
-.diseno-acceso .rejilla-campos input[aria-invalid="true"] {
-    border-color: var(--acceso-error);
-    background: rgba(255, 120, 100, 0.14);
-}
-.diseno-acceso .error-campo { color: var(--acceso-error); }
-.diseno-acceso .error-campo.estado-ok { color: #b7f0cf; }
-.diseno-acceso .contador-contrasena { color: var(--acceso-texto-suave); }
-.diseno-acceso .contador-contrasena.contador-ok { color: #b7f0cf; }
-.diseno-acceso .contador-contrasena.contador-excedido { color: var(--acceso-error); }
-
-.diseno-acceso .grupo-opciones { background: var(--acceso-campo); border-color: var(--acceso-campo-borde); border-radius: 12px; }
-.diseno-acceso .grupo-opciones.grupo-invalido { border-color: var(--acceso-error); }
-.diseno-acceso .grupo-opciones input[type="radio"] { accent-color: var(--acceso-violeta); }
-
-.diseno-acceso .boton-mostrar { color: var(--acceso-enlace); }
-.diseno-acceso .boton-mostrar:hover { background: rgba(255, 255, 255, 0.14); }
-
-.enlace-secundario { align-self: flex-end; font-size: 0.92em; }
-
-.acciones-acceso {
-    grid-column: 1 / -1;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-    margin-top: 4px;
-}
+.diseno-acceso { background: var(--color-fondo); }
+body { min-height: 100vh; display: flex; flex-direction: column; }
+.contenedor-principal { width: 100%; flex: 1; }
+.diseno-acceso .contenedor-principal { max-width: none; margin: 0; padding: 0; display: grid; align-items: center; }
+.pantalla-acceso { display: grid; place-items: center; padding: 48px 24px; }
+.tarjeta-acceso { width: min(100%, 1080px); display: grid; grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr); background: #fff; border: 1px solid #dce3eb; border-radius: 18px; box-shadow: 0 18px 55px rgba(20, 47, 79, 0.08); overflow: hidden; }
+.panel-institucional { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 56px 40px; background: var(--umar-marino); color: #fff; position: relative; }
+.panel-institucional::after { content: ''; width: 56px; height: 3px; background: var(--umar-oro); margin-top: 32px; }
+.logo-institucional { display: block; width: 100px; height: auto; padding: 8px; background: #fff; border-radius: 12px; }
+.nombre-universidad { margin: 28px 0 6px; font-size: 1.8rem; font-weight: 650; line-height: 1.2; letter-spacing: -0.04em; }
+.nombre-campus { margin: 0; font-size: 0.94rem; color: #d6e1ed; }
+.nombre-sistema { display: flex; align-items: flex-start; gap: 12px; margin: 40px 0 0; padding-top: 24px; border-top: 1px solid #52667f; font-size: 1.05rem; line-height: 1.6; max-width: 310px; }
+.icono-sistema { width: 26px; height: 26px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; }
+.panel-formulario { min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 48px clamp(24px, 4vw, 56px); }
+.titulo-acceso { margin: 0; color: var(--umar-marino); font-size: clamp(1.8rem, 3vw, 2.2rem); letter-spacing: -0.035em; line-height: 1.2; }
+.subtitulo-acceso { margin: 12px 0 28px; color: var(--color-secundario); line-height: 1.6; font-size: 0.96rem; }
+.diseno-acceso .rejilla-campos input[type='text'],
+.diseno-acceso .rejilla-campos input[type='email'],
+.diseno-acceso .rejilla-campos input[type='password'] { min-height: 48px; border-radius: 8px; background: #fff; border-color: #8b99aa; color: var(--color-texto); }
+.diseno-acceso .rejilla-campos input::placeholder { color: #657387; opacity: 1; }
+.diseno-acceso .rejilla-campos input:focus { border-color: #245c91; outline: 3px solid #b9d5ef; outline-offset: 2px; }
+.diseno-acceso .rejilla-campos input[aria-invalid='true'] { border-color: var(--color-error); background: #fff8f7; }
+.diseno-acceso .grupo-opciones { border-color: #c9d3df; border-radius: 8px; background: #f7f9fc; }
+.diseno-acceso .grupo-opciones input[type='radio'] { accent-color: var(--umar-marino); }
+.diseno-acceso .grupo-opciones label { min-height: 44px; }
+.diseno-acceso .grupo-opciones.grupo-invalido { border-color: var(--color-error); }
+.enlace-secundario { align-self: flex-end; font-size: 0.9rem; margin-top: 2px; }
+.acciones-acceso { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin-top: 8px; }
 .acciones-acceso .texto-secundario { margin: 0; text-align: center; }
 .acciones-acceso .enlaces-pie { justify-content: center; }
-.diseno-acceso .boton-principal {
-    min-height: 52px;
-    border: 0;
-    border-radius: 999px;
-    background: linear-gradient(90deg, var(--acceso-violeta), var(--acceso-violeta-oscuro));
-    color: #fff;
-    font-size: 1.15rem;
-    box-shadow: 0 8px 22px rgba(83, 56, 201, 0.45);
-}
-.diseno-acceso .boton-principal:hover { background: linear-gradient(90deg, #7a5cf0, #5d43d6); }
-.diseno-acceso .boton-principal .icono { width: 1.3em; height: 1.3em; }
-
-/* "¿Aún no tiene cuenta? Solicitar acceso" y similares. */
-.invitacion-acceso {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    margin: 24px 0 0;
-    padding-top: 20px;
-    border-top: 1px solid var(--acceso-borde);
-}
-.diseno-acceso .enlace-destacado {
-    display: inline-flex;
-    align-items: center;
-    min-height: 40px;
-    padding: 6px 18px;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    border-radius: 999px;
-    background: rgba(109, 75, 234, 0.45);
-    color: #fff;
-    text-decoration: none;
-}
-.diseno-acceso .enlace-destacado:hover { background: rgba(109, 75, 234, 0.7); }
-
-.enlaces-apoyo {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px 24px;
-    margin-top: 20px;
-    font-size: 0.88em;
-}
-.diseno-acceso .enlaces-apoyo a { color: var(--acceso-texto-suave); font-weight: 500; }
-
-.diseno-acceso .lista-pasos li::marker { color: #b9a4ff; font-weight: 700; }
+.diseno-acceso .boton-principal { min-height: 48px; border-radius: 8px; background: var(--umar-marino); color: #fff; border: 1px solid var(--umar-marino); font-size: 1rem; box-shadow: none; }
+.diseno-acceso .boton-principal:hover { background: #24496e; }
+.invitacion-acceso { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin: 28px 0 0; padding-top: 24px; border-top: 1px solid #e1e7ef; color: var(--color-secundario); font-size: 0.92rem; }
+.enlace-destacado { display: inline-flex; align-items: center; min-height: 44px; }
+.pie-institucional { width: min(100%, 1128px); margin: 0 auto; padding: 20px 24px 28px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 24px; color: var(--color-secundario); font-size: 0.8rem; }
+.pie-institucional p { margin: 0; }
+.pie-institucional nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.pie-institucional a { display: inline-flex; align-items: center; min-height: 44px; color: var(--color-secundario); font-weight: 500; text-underline-offset: 4px; }
+.pie-institucional a:hover { color: var(--umar-marino); }
+.diseno-acceso .lista-pasos li::marker { color: var(--umar-marino); font-weight: 700; }
 
 /* ===================== 6. Verificación en dos pasos ===================== */
 .clave-secreta {
@@ -480,7 +281,7 @@ summary:focus-visible { outline: 3px solid var(--umar-marino); outline-offset: 2
 }
 .detalle-tecnico { margin-bottom: 16px; }
 .detalle-tecnico summary { cursor: pointer; color: var(--umar-azul); font-weight: 600; }
-.diseno-acceso .detalle-tecnico summary { color: var(--acceso-enlace); }
+.diseno-acceso .detalle-tecnico summary { color: var(--umar-azul); }
 .lista-codigos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; padding: 0; list-style: none; }
 .lista-codigos code { display: block; padding: 8px; background: var(--color-fondo); border-radius: 6px; text-align: center; font-size: 1.05rem; }
 
@@ -520,8 +321,8 @@ summary:focus-visible { outline: 3px solid var(--umar-marino); outline-offset: 2
         padding: 20px 24px;
         text-align: left;
         border-right: 0;
-        border-bottom: 1px solid var(--acceso-borde);
-        background: none;
+        border-bottom: 1px solid var(--color-borde);
+        background: var(--umar-marino);
     }
     .logo-institucional { grid-row: span 2; width: 76px; padding: 6px; border-radius: 16px; }
     .nombre-universidad { margin: 0; font-size: 1.35rem; align-self: end; }
@@ -533,9 +334,11 @@ summary:focus-visible { outline: 3px solid var(--umar-marino); outline-offset: 2
 
 @media (max-width: 560px) {
     .pantalla-acceso { padding: 12px; place-items: start center; }
-    .tarjeta-acceso { border-radius: 20px; }
+    .tarjeta-acceso { border-radius: 12px; }
     .rejilla-campos { grid-template-columns: 1fr; }
     .panel-formulario { padding: 24px 18px 20px; }
     .decisiones-solicitud { grid-template-columns: 1fr; }
     .tarjeta-amplia { overflow-x: auto; }
 }
+
+@media (max-width: 860px) { .panel-institucional::after { display: none; } .pie-institucional { justify-content: center; text-align: center; } }

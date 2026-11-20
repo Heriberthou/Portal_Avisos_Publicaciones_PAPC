@@ -61,6 +61,12 @@ riesgo, propuesta). Claude Code lo corrige y responde en el mismo archivo.
 
 ### Codex
 
+- **Nueva tarea autorizada:** implementar el rediseño institucional de acceso y la identificación contextual alumno/profesor. El responsable indicó que pausará a Claude en la interfaz.
+- **Estado de esta tarea:** Implementación terminada. Paleta marino/blanco/gris, tipografía del sistema, pie común con Ayuda/Privacidad e identificación contextual en HTML, JavaScript y mensajes PHP.
+- **Archivos reservados:** `public/css/portal.css`, `public/js/validacion-formularios.js`, vistas y parciales de acceso/pie, `app/nucleo/ValidadorEntrada.php` y este documento. Se amplía para esta tarea el rol previo de solo revisión por instrucción expresa del responsable.
+- **Decisión del responsable:** conservar la unicidad actual del identificador; formato institucional y posibles coincidencias entre tipos aún no confirmados. Sin migraciones ni cambios de base de datos.
+- **Validación del rediseño:** 19/19 pruebas unitarias; sintaxis PHP/JavaScript correcta. Comprobación visual en navegador a 1440 y 390 px, cambio Alumno/Profesor, errores contextuales y navegación a Ayuda/Privacidad. La primera ejecución aislada falló en U05 por ubicación de sesiones; al repetir fuera del aislamiento pasó sin modificar código de sesiones. Vista previa de solo lectura en `http://127.0.0.1:8012` (no procesa cuentas ni conecta a la base). No equivale a validar el flujo de autenticación con base de datos.
+
 - **Tarea en curso:** Verificación de las correcciones R-01 a R-08 del commit `328e0f0`, mientras Claude modifica la interfaz.
 - **Estado:** Revisión entregada del commit `328e0f0`. Solo se editaron los dos documentos de coordinación y revisión; el código y los cambios locales de Claude se consultaron sin modificarlos.
 - **Seguimiento:** R-06 sigue abierto parcialmente y se agrega R-09 (orden de bloqueos entre emisión y consumo). Las demás correcciones se corroboraron por lectura con las limitaciones indicadas al inicio de `docs/revision-codex.md`. Sintaxis: 88 archivos PHP sin errores; sin nueva ejecución de las suites ni acceso a base de datos.
